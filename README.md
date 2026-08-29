@@ -1,36 +1,106 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# xQA Timesheets
 
-## Getting Started
+Internal web app for capturing daily time, reviewing team completion, approving
+weekly submissions, and exporting reporting data. Built with **Next.js 16 (App
+Router)**, **TypeScript**, **Tailwind CSS**, and **Supabase** (Postgres + Auth +
+Row-Level Security).
 
-First, run the development server:
+Preserves the existing spreadsheet mental model: _Date, Project, Employee,
+Platform, Hours, Work Type, Description_.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Status
+
+Foundation scaffold (backlog tickets TS-001, TS-002, TS-003, TS-010; RLS from
+TS-012). Auth, role-based route protection, the app shell/nav, and the full
+database schema + policies are in place. Domain screens (My Timesheet, Team,
+Approvals, Reports, Admin) are routed and role-gated placeholders awaiting their
+tickets.
+
+## Prerequisites
+
+- Node.js 20+ (22+ recommended — `@supabase/supabase-js` warns on 20)
+- A Supabase project (cloud) or the [Supabase CLI](https://supabase.com/docs/guides/cli) for local dev
+
+## Setup
+
+1. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. Configure environment:
+
+   ```bash
+   cp .env.example .env.local
+   ```
+
+   Fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
+   `SUPABASE_SERVICE_ROLE_KEY` from **Supabase Dashboard → Project Settings → API**.
+
+3. Apply the database schema. Either link the Supabase CLI and push:
+
+   ```bash
+   supabase link --project-ref <your-ref>
+   supabase db push          # runs supabase/migrations/*.sql
+   ```
+
+   …or run local Supabase:
+
+   ```bash
+   supabase start
+   supabase db reset         # migrations + supabase/seeds/seed.sql
+   ```
+
+   For cloud, run `supabase/seeds/seed.sql` via the SQL editor to load catalogs.
+
+4. Provision demo users — see [`supabase/seeds/seed-demo.md`](supabase/seeds/seed-demo.md)
+   (users require `auth.users` rows, so they can't be seeded with plain SQL).
+
+5. Run the app:
+
+   ```bash
+   npm run dev
+   ```
+
+   Open http://localhost:3000 — you'll be redirected to `/login`.
+
+## Scripts
+
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run format` | Prettier write |
+
+## Structure
+
+```
+app/
+  (auth)/login/         Email + password sign-in
+  (app)/                Authenticated shell (role-based nav)
+    my-timesheet/       Employee entry (TS-020+)
+    team/               Manager grid (TS-030)
+    approvals/          Approval queue (TS-031)
+    reports/            Reporting + export (TS-040/041)
+    admin/              Catalogs, users, audit (TS-050+)
+  auth/callback/        OAuth / magic-link exchange
+lib/
+  supabase/             Browser + server + proxy clients
+  auth/                 Session & role helpers
+  permissions/          Route → role map, nav
+types/                  Domain enums + DB types
+supabase/
+  migrations/           0001_init.sql, 0002_rls.sql
+  seeds/                seed.sql, seed-demo.md
+proxy.ts                Session refresh + route protection
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Roles
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`employee` → own timesheet, PTO, history. `manager` → + team view, approvals,
+reports. `admin` → + catalogs, user management, audit. `users.role` is the source
+of truth and is mirrored into the auth JWT by a trigger for cheap checks in the
+proxy and RLS.
