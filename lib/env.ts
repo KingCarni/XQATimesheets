@@ -3,18 +3,16 @@ import { z } from "zod";
 /**
  * Centralised, validated environment access.
  *
- * Public (NEXT_PUBLIC_*) vars are safe in the browser bundle. The service-role
- * key must only ever be read on the server — never import `serverEnv` into a
- * client component.
+ * Public (NEXT_PUBLIC_*) vars are safe in the browser bundle. Server secrets
+ * must only ever be read on the server.
  */
 
-const publicSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-});
+const publicSchema = z.object({});
 
 const serverSchema = z.object({
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  DATABASE_URL: z.string().url(),
+  DATABASE_URL_UNPOOLED: z.string().url(),
+  AUTH_SECRET: z.string().min(32),
 });
 
 function parse<T extends z.ZodTypeAny>(schema: T, source: Record<string, unknown>): z.infer<T> {
@@ -23,21 +21,19 @@ function parse<T extends z.ZodTypeAny>(schema: T, source: Record<string, unknown
     const missing = result.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(
       `Invalid or missing environment variables: ${missing}. ` +
-        `Copy .env.example to .env.local and fill in your Supabase project values.`,
+        `Copy .env.example to .env.local and fill in your Neon/Auth.js values.`,
     );
   }
   return result.data;
 }
 
-// Referenced statically so Next.js can inline NEXT_PUBLIC_* at build time.
-export const publicEnv = parse(publicSchema, {
-  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-});
+export const publicEnv = parse(publicSchema, {});
 
 /** Server-only secrets. Call from server code paths only. */
 export function serverEnv() {
   return parse(serverSchema, {
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    DATABASE_URL: process.env.DATABASE_URL,
+    DATABASE_URL_UNPOOLED: process.env.DATABASE_URL_UNPOOLED,
+    AUTH_SECRET: process.env.AUTH_SECRET,
   });
 }

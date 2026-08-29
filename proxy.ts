@@ -1,19 +1,17 @@
-import type { NextRequest } from "next/server";
+import NextAuth from "next-auth";
 
-import { updateSession } from "@/lib/supabase/middleware";
+import { authConfig } from "@/auth";
 
-// Next.js 16 renamed the "middleware" convention to "proxy". This runs on every
-// matched request to refresh the Supabase session and enforce route protection.
-export async function proxy(request: NextRequest) {
-  return updateSession(request);
-}
+const authProxy = NextAuth(authConfig).auth;
+
+export default authProxy;
 
 export const config = {
   matcher: [
     /*
-     * Run on all routes except Next internals and static assets, so the
-     * Supabase session cookie is refreshed on every navigation.
+     * Run on all routes except Auth.js endpoints, Next internals, and static
+     * assets. Server code still performs authoritative authorization.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

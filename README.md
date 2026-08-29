@@ -2,24 +2,22 @@
 
 Internal web app for capturing daily time, reviewing team completion, approving
 weekly submissions, and exporting reporting data. Built with **Next.js 16 (App
-Router)**, **TypeScript**, **Tailwind CSS**, and **Supabase** (Postgres + Auth +
-Row-Level Security).
+Router)**, **TypeScript**, **Tailwind CSS**, **Neon Postgres**, **Prisma**, and
+**Auth.js**.
 
 Preserves the existing spreadsheet mental model: _Date, Project, Employee,
 Platform, Hours, Work Type, Description_.
 
 ## Status
 
-Foundation scaffold (backlog tickets TS-001, TS-002, TS-003, TS-010; RLS from
-TS-012). Auth, role-based route protection, the app shell/nav, and the full
-database schema + policies are in place. Domain screens (My Timesheet, Team,
-Approvals, Reports, Admin) are routed and role-gated placeholders awaiting their
-tickets.
+Auth, role-based route protection, the app shell/nav, the Prisma-backed schema,
+catalog seed, and the My Timesheet workflow are in place. Team, Approvals,
+Reports, and Admin are routed and role-gated placeholders awaiting their tickets.
 
 ## Prerequisites
 
-- Node.js 20+ (22+ recommended — `@supabase/supabase-js` warns on 20)
-- A Supabase project (cloud) or the [Supabase CLI](https://supabase.com/docs/guides/cli) for local dev
+- Node.js 20+
+- A Neon Postgres database
 
 ## Setup
 
@@ -35,27 +33,26 @@ tickets.
    cp .env.example .env.local
    ```
 
-   Fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
-   `SUPABASE_SERVICE_ROLE_KEY` from **Supabase Dashboard → Project Settings → API**.
+   Fill in `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, and `AUTH_SECRET`.
 
-3. Apply the database schema. Either link the Supabase CLI and push:
-
-   ```bash
-   supabase link --project-ref <your-ref>
-   supabase db push          # runs supabase/migrations/*.sql
-   ```
-
-   …or run local Supabase:
+3. Apply the database schema and seed catalogs:
 
    ```bash
-   supabase start
-   supabase db reset         # migrations + supabase/seeds/seed.sql
+   npx prisma migrate deploy
+   npx prisma db seed
    ```
 
-   For cloud, run `supabase/seeds/seed.sql` via the SQL editor to load catalogs.
+4. Provision users in `users` and `employee_profiles`. Passwords are stored in
+   `users.password_hash` using the same scrypt format Auth.js verifies at login:
 
-4. Provision demo users — see [`supabase/seeds/seed-demo.md`](supabase/seeds/seed-demo.md)
-   (users require `auth.users` rows, so they can't be seeded with plain SQL).
+   ```bash
+   npm run provision:user -- --email "tester@example.com" --name "Smoke Tester" --role employee
+   ```
+
+   The script reads `.env.local`, uses `DATABASE_URL_UNPOOLED`, and prompts for
+   the password without writing plaintext credentials to the repository or seed
+   files. Use `--role manager|admin`, `--employee-code`, `--department`, or
+   `--manager-email` only when needed.
 
 5. Run the app:
 
@@ -63,7 +60,7 @@ tickets.
    npm run dev
    ```
 
-   Open http://localhost:3000 — you'll be redirected to `/login`.
+   Open http://localhost:3000 and sign in at `/login`.
 
 ## Scripts
 
@@ -86,21 +83,22 @@ app/
     approvals/          Approval queue (TS-031)
     reports/            Reporting + export (TS-040/041)
     admin/              Catalogs, users, audit (TS-050+)
-  auth/callback/        OAuth / magic-link exchange
+  api/auth/             Auth.js route handlers
 lib/
-  supabase/             Browser + server + proxy clients
-  auth/                 Session & role helpers
-  permissions/          Route → role map, nav
-types/                  Domain enums + DB types
-supabase/
-  migrations/           0001_init.sql, 0002_rls.sql
-  seeds/                seed.sql, seed-demo.md
-proxy.ts                Session refresh + route protection
+  auth/                 Session, password, and authorization helpers
+  permissions/          Route to role map, nav
+  timesheets/           My Timesheet queries/actions support
+prisma/
+  schema.prisma         Neon schema
+  migrations/           Prisma migrations
+  seed.mjs              Baseline catalog seed
+types/                  Domain enums + serializable DB DTO types
+proxy.ts                Auth.js route protection
 ```
 
 ## Roles
 
-`employee` → own timesheet, PTO, history. `manager` → + team view, approvals,
-reports. `admin` → + catalogs, user management, audit. `users.role` is the source
-of truth and is mirrored into the auth JWT by a trigger for cheap checks in the
-proxy and RLS.
+`employee` can manage their own editable timesheets. `manager` unlocks manager
+routes, but project-scoped data access requires a `project_assignments` row with
+`assignment_role` of `lead` or `manager` on a shared active project. `admin`
+retains global access.

@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/auth";
 import { LOGIN_PATH } from "@/lib/permissions/routes";
+import { prisma } from "@/lib/prisma";
 import type { AppRole } from "@/types/domain";
 import type { Row } from "@/types/database";
+import { toEmployeeProfileRow } from "@/lib/timesheets/queries";
 
 export type CurrentUser = {
   id: string;
@@ -12,38 +14,22 @@ export type CurrentUser = {
   profile: Row<"employee_profiles"> | null;
 };
 
-/**
- * Load the signed-in user with their app role and employee profile.
- * Returns null when unauthenticated. The `users` row is the source of truth
- * for role; we fall back to auth metadata if the row is not yet provisioned.
- */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await auth();
+  const sessionUserId = session?.user?.id;
+  if (!sessionUserId) return null;
+
+  const user = await prisma.users.findFirst({
+    where: { id: sessionUserId, is_active: true },
+    include: { employee_profile: true },
+  });
   if (!user) return null;
-
-  const { data: userRow } = await supabase
-    .from("users")
-    .select("id, email, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const { data: profile } = await supabase
-    .from("employee_profiles")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const role =
-    userRow?.role ?? ((user.app_metadata?.role as AppRole | undefined) ?? "employee");
 
   return {
     id: user.id,
-    email: userRow?.email ?? user.email ?? "",
-    role,
-    profile: profile ?? null,
+    email: user.email,
+    role: user.role,
+    profile: user.employee_profile ? toEmployeeProfileRow(user.employee_profile) : null,
   };
 }
 

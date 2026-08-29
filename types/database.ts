@@ -1,13 +1,8 @@
 /**
- * Supabase database types.
+ * Database row DTO types.
  *
- * This file is hand-authored to match `supabase/migrations/0001_init.sql`
- * so the app is type-safe before a live database exists. Once the Supabase
- * project is provisioned, regenerate it from the source of truth:
- *
- *   supabase gen types typescript --project-id <ref> --schema public > types/database.ts
- *
- * Keep it in sync with the migrations until then.
+ * These are the serializable shapes passed to Client Components. Keep them in
+ * sync with `prisma/schema.prisma` and the mappers in `lib/timesheets/queries`.
  */
 
 import type {
@@ -31,12 +26,14 @@ export type Database = {
         Row: {
           id: string;
           email: string;
+          password_hash: string | null;
           role: AppRole;
           is_active: boolean;
         } & Timestamps;
         Insert: {
           id: string;
           email: string;
+          password_hash?: string | null;
           role?: AppRole;
           is_active?: boolean;
           created_at?: string;

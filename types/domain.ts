@@ -1,8 +1,8 @@
 /**
  * Domain-level enums and value types.
  *
- * These mirror the Postgres enums defined in
- * `supabase/migrations/0001_init.sql`. Keep the two in sync.
+ * These mirror the Postgres enums defined in `prisma/schema.prisma`.
+ * Keep the two in sync.
  */
 
 export const APP_ROLES = ["employee", "manager", "admin"] as const;

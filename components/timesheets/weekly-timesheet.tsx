@@ -2,7 +2,15 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { CalendarDays, Copy, Lock } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Copy,
+  Lock,
+  Target,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -79,8 +87,25 @@ export function WeeklyTimesheet({
     return map;
   }, [entries, week.days]);
 
+  const ptoActivityIds = useMemo(
+    () => new Set(catalogs.activityTypes.filter((a) => a.is_pto).map((a) => a.id)),
+    [catalogs.activityTypes],
+  );
+  const billableActivityIds = useMemo(
+    () => new Set(catalogs.activityTypes.filter((a) => a.is_billable).map((a) => a.id)),
+    [catalogs.activityTypes],
+  );
+
   const dailyTotal = (d: DateStr) => (byDate.get(d) ?? []).reduce((s, e) => s + Number(e.hours), 0);
   const weekTotal = entries.reduce((s, e) => s + Number(e.hours), 0);
+  const ptoTotal = entries.reduce(
+    (s, e) => s + (ptoActivityIds.has(e.activity_type_id) ? Number(e.hours) : 0),
+    0,
+  );
+  const billableTotal = entries.reduce(
+    (s, e) => s + (billableActivityIds.has(e.activity_type_id) ? Number(e.hours) : 0),
+    0,
+  );
   const weekExpected = expectedHoursForWeek(defaultDailyHours);
   const weekStateColor = STATE_TEXT[dayState(weekTotal, weekExpected)];
 
@@ -121,181 +146,230 @@ export function WeeklyTimesheet({
   const visibleDays = week.days.filter((d) => showWeekend || !isWeekend(d));
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">My Timesheet</h1>
-          <p className="text-muted-foreground flex items-center gap-2 text-sm">
-            <CalendarDays className="h-4 w-4" /> {weekRangeLabel(week)}
-            <StatusBadge status={periodStatus} />
-          </p>
-        </div>
+    <div className="mx-auto flex max-w-7xl flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-muted-foreground text-xs">Week total</p>
-            <p className={cn("text-lg font-semibold", weekStateColor)}>
-              {fmt(weekTotal)} / {fmt(weekExpected)}h
+          <div className="from-xqa-blue to-xqa-blue-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-lg shadow-xqa-blue/25">
+            <CalendarDays className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">My Timesheet</h1>
+            <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+              {weekRangeLabel(week)}
+              <span className="bg-xqa-pink h-1.5 w-1.5 rounded-full" />
+              <span className={cn("font-semibold", weekStateColor)}>
+                {fmt(weekTotal)} / {fmt(weekExpected)}h
+              </span>
             </p>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!editable || copyPending}
+            onClick={runCopyWeek}
+          >
+            <Copy className="h-4 w-4" /> Copy Previous Week
+          </Button>
           <WeekNav weekStart={weekStart} />
         </div>
       </div>
 
-      {!editable ? (
-        <div className="border-border bg-muted text-muted-foreground flex items-center gap-2 rounded-md border p-3 text-sm">
-          <Lock className="h-4 w-4" /> This week is {periodStatus} and can no longer be edited.
-        </div>
-      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard icon={Clock3} label="Total Hours" value={fmt(weekTotal)} tone="blue" />
+        <SummaryCard icon={CheckCircle2} label="PTO Hours" value={fmt(ptoTotal)} tone="green" />
+        <SummaryCard
+          icon={BriefcaseBusiness}
+          label="Billable Hours"
+          value={fmt(billableTotal)}
+          tone="orange"
+        />
+        <SummaryCard icon={Target} label="Daily Target" value={fmt(defaultDailyHours)} tone="slate" />
+      </div>
 
-      {/* Day tabs */}
-      <div className="flex flex-wrap items-stretch gap-2">
-        {visibleDays.map((d) => {
-          const total = dailyTotal(d);
-          const expected = expectedHoursForDay(d, defaultDailyHours);
-          const st = dayState(total, expected);
-          const weekend = isWeekend(d);
-          const active = d === selectedDate;
-          return (
-            <button
-              key={d}
+      <div className="border-border bg-card rounded-2xl border shadow-[var(--shadow-soft)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+          <StatusBadge status={periodStatus} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
               type="button"
-              onClick={() => setSelectedDate(d)}
-              className={cn(
-                "flex min-w-[84px] flex-col rounded-md border px-3 py-2 text-left transition-colors",
-                active ? "border-ring bg-card" : "border-border hover:bg-muted",
-                weekend && "opacity-70",
-              )}
+              variant="outline"
+              size="sm"
+              disabled={!editable || copyPending}
+              onClick={runCopyDay}
             >
-              <span className="text-xs font-medium">
-                {weekdayLabel(d)}
-                {weekend ? " ·" : ""}
-              </span>
-              <span className={cn("text-sm font-semibold", STATE_TEXT[st])}>
-                {expected > 0 ? `${fmt(total)} / ${fmt(expected)}h` : `${fmt(total)}h`}
-              </span>
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => setShowWeekend((v) => !v)}
-          className="border-border text-muted-foreground hover:bg-muted min-w-[84px] rounded-md border border-dashed px-3 py-2 text-xs"
-        >
-          {showWeekend ? "Hide weekend" : "Show weekend"}
-        </button>
-      </div>
-
-      {/* Copy actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!editable || copyPending}
-          onClick={runCopyDay}
-        >
-          <Copy className="h-4 w-4" /> Copy Previous Day
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!editable || copyPending}
-          onClick={runCopyWeek}
-        >
-          <Copy className="h-4 w-4" /> Copy Previous Week
-        </Button>
-        {copyError ? <span className="text-destructive text-xs">{copyError}</span> : null}
-      </div>
-
-      {/* Selected day panel */}
-      <div className="border-border bg-card rounded-lg border p-4">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold">{longDayLabel(selectedDate)}</h2>
-          <p className="text-sm">
-            <span className="text-muted-foreground">Logged </span>
-            <span className={cn("font-semibold", dayColor)}>{fmt(dayLogged)}h</span>
-            {dayExpected > 0 ? (
-              <>
-                <span className="text-muted-foreground"> of {fmt(dayExpected)}h · </span>
-                {dayRemaining > 0 ? (
-                  <span className="text-warning">{fmt(dayRemaining)}h remaining</span>
-                ) : dayRemaining < 0 ? (
-                  <span className="text-destructive">{fmt(-dayRemaining)}h over</span>
-                ) : (
-                  <span className="text-success">complete</span>
-                )}
-              </>
-            ) : (
-              <span className="text-muted-foreground"> · weekend</span>
-            )}
-          </p>
+              <Copy className="h-4 w-4" /> Copy Previous Day
+            </Button>
+            {copyError ? <span className="text-destructive text-xs">{copyError}</span> : null}
+          </div>
         </div>
 
-        {/* Column headers */}
-        {dayEntries.length > 0 ? (
-          <div className="text-muted-foreground grid grid-cols-[1.4fr_1fr_1.4fr_0.6fr_2fr_auto] gap-2 border-b pb-1 text-xs font-medium">
-            <span>Project</span>
-            <span>Platform</span>
-            <span>Work Type</span>
-            <span className="text-right">Hours</span>
-            <span>Description</span>
-            <span />
+        {!editable ? (
+          <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl border border-xqa-pink/20 bg-xqa-pink/8 p-3 text-sm text-destructive sm:mx-5">
+            <Lock className="h-4 w-4" /> This week is {periodStatus} and can no longer be edited.
           </div>
-        ) : (
-          <p className="text-muted-foreground py-4 text-sm">No entries yet for this day.</p>
-        )}
-
-        {dayEntries.map((e) => (
-          <EntryRow
-            key={e.id}
-            entry={e}
-            catalogs={catalogs}
-            editable={editable}
-            onSaved={upsert}
-            onRemoved={removeLocal}
-          />
-        ))}
-
-        {editable ? (
-          <>
-            {templates.length > 0 ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground text-xs">Templates:</span>
-                {templates.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() =>
-                      setPrefill({
-                        value: {
-                          projectId: t.project_id ?? "",
-                          platformId: t.platform_id ?? "",
-                          activityId: t.activity_type_id,
-                          description: t.description ?? "",
-                        },
-                        key: Date.now(),
-                      })
-                    }
-                    className="border-border hover:bg-muted rounded-full border px-3 py-1 text-xs"
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            <AddEntryForm
-              key={prefill?.key ?? "add"}
-              weekStart={weekStart}
-              entryDate={selectedDate}
-              catalogs={catalogs}
-              initial={prefill?.value}
-              onAdded={upsert}
-            />
-          </>
         ) : null}
+
+        <div className="flex flex-wrap items-stretch gap-2 px-4 py-4 sm:px-5">
+          {visibleDays.map((d) => {
+            const total = dailyTotal(d);
+            const expected = expectedHoursForDay(d, defaultDailyHours);
+            const st = dayState(total, expected);
+            const weekend = isWeekend(d);
+            const active = d === selectedDate;
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setSelectedDate(d)}
+                className={cn(
+                  "flex min-w-[88px] flex-col rounded-xl border px-3 py-2 text-left transition",
+                  active
+                    ? "border-xqa-blue bg-xqa-sky-soft text-foreground shadow-sm"
+                    : "border-border hover:bg-muted",
+                  weekend && "opacity-60",
+                )}
+              >
+                <span className="text-xs font-semibold">
+                  {weekdayLabel(d)}
+                  {weekend ? " *" : ""}
+                </span>
+                <span className={cn("text-sm font-semibold", STATE_TEXT[st])}>
+                  {expected > 0 ? `${fmt(total)} / ${fmt(expected)}h` : `${fmt(total)}h`}
+                </span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setShowWeekend((v) => !v)}
+            className="border-border text-muted-foreground hover:bg-muted min-w-[88px] rounded-xl border border-dashed px-3 py-2 text-xs font-semibold"
+          >
+            {showWeekend ? "Hide weekend" : "Show weekend"}
+          </button>
+        </div>
+
+        <div className="overflow-x-auto border-t border-border p-4 sm:p-5">
+          <div className="mb-3 flex min-w-[880px] flex-wrap items-baseline justify-between gap-2 lg:min-w-0">
+            <h2 className="text-lg font-semibold tracking-tight">{longDayLabel(selectedDate)}</h2>
+            <p className="text-sm">
+              <span className="text-muted-foreground">Logged </span>
+              <span className={cn("font-semibold", dayColor)}>{fmt(dayLogged)}h</span>
+              {dayExpected > 0 ? (
+                <>
+                  <span className="text-muted-foreground"> of {fmt(dayExpected)}h - </span>
+                  {dayRemaining > 0 ? (
+                    <span className="text-warning">{fmt(dayRemaining)}h remaining</span>
+                  ) : dayRemaining < 0 ? (
+                    <span className="text-destructive">{fmt(-dayRemaining)}h over</span>
+                  ) : (
+                    <span className="text-success">complete</span>
+                  )}
+                </>
+              ) : (
+                <span className="text-muted-foreground"> - weekend</span>
+              )}
+            </p>
+          </div>
+
+          {dayEntries.length > 0 ? (
+            <div className="text-muted-foreground grid min-w-[880px] grid-cols-[1.4fr_1fr_1.4fr_0.6fr_2fr_auto] gap-2 border-b border-border pb-2 text-xs font-semibold lg:min-w-0">
+              <span>Project</span>
+              <span>Platform</span>
+              <span>Work Type</span>
+              <span className="text-right">Hours</span>
+              <span>Description</span>
+              <span />
+            </div>
+          ) : (
+            <p className="text-muted-foreground rounded-xl border border-dashed border-border bg-muted/40 py-4 text-center text-sm">
+              No entries yet for this day.
+            </p>
+          )}
+
+          {dayEntries.map((e) => (
+            <EntryRow
+              key={e.id}
+              entry={e}
+              catalogs={catalogs}
+              editable={editable}
+              onSaved={upsert}
+              onRemoved={removeLocal}
+            />
+          ))}
+
+          {editable ? (
+            <>
+              {templates.length > 0 ? (
+                <div className="mt-3 flex min-w-[880px] flex-wrap items-center gap-2 lg:min-w-0">
+                  <span className="text-muted-foreground text-xs">Templates:</span>
+                  {templates.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() =>
+                        setPrefill({
+                          value: {
+                            projectId: t.project_id ?? "",
+                            platformId: t.platform_id ?? "",
+                            activityId: t.activity_type_id,
+                            description: t.description ?? "",
+                          },
+                          key: Date.now(),
+                        })
+                      }
+                      className="border-border hover:bg-xqa-sky-soft rounded-full border bg-white px-3 py-1 text-xs font-medium shadow-sm"
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <AddEntryForm
+                key={prefill?.key ?? "add"}
+                weekStart={weekStart}
+                entryDate={selectedDate}
+                catalogs={catalogs}
+                initial={prefill?.value}
+                onAdded={upsert}
+              />
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof Clock3;
+  label: string;
+  value: string;
+  tone: "blue" | "green" | "orange" | "slate";
+}) {
+  const tones = {
+    blue: "bg-xqa-sky-soft text-xqa-blue",
+    green: "bg-green-50 text-success",
+    orange: "bg-orange-50 text-warning",
+    slate: "bg-slate-100 text-slate-600",
+  };
+
+  return (
+    <div className="border-border bg-card flex items-center gap-4 rounded-2xl border p-4 shadow-[var(--shadow-soft)]">
+      <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-full", tones[tone])}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <p className="text-xl font-semibold tracking-tight">{value}</p>
+        <p className="text-muted-foreground text-xs font-medium">{label}</p>
       </div>
     </div>
   );
@@ -304,24 +378,24 @@ export function WeeklyTimesheet({
 function WeekNav({ weekStart }: { weekStart: DateStr }) {
   const base = "/my-timesheet";
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1 shadow-sm">
       <Link
         href={`${base}?week=${shiftWeek(weekStart, -1)}`}
-        className="border-border hover:bg-muted rounded-md border px-2 py-1 text-sm"
+        className="hover:bg-xqa-sky-soft rounded-lg px-2 py-1 text-sm font-semibold text-muted-foreground"
       >
-        ‹
+        Prev
       </Link>
       <Link
         href={base}
-        className="border-border hover:bg-muted rounded-md border px-3 py-1 text-sm"
+        className="from-xqa-blue to-xqa-blue-2 rounded-lg bg-gradient-to-r px-3 py-1 text-sm font-semibold text-white"
       >
         Today
       </Link>
       <Link
         href={`${base}?week=${shiftWeek(weekStart, 1)}`}
-        className="border-border hover:bg-muted rounded-md border px-2 py-1 text-sm"
+        className="hover:bg-xqa-sky-soft rounded-lg px-2 py-1 text-sm font-semibold text-muted-foreground"
       >
-        ›
+        Next
       </Link>
     </div>
   );
@@ -330,14 +404,14 @@ function WeekNav({ weekStart }: { weekStart: DateStr }) {
 function StatusBadge({ status }: { status: TimesheetStatus | null }) {
   const s = status ?? "open";
   const color: Record<TimesheetStatus, string> = {
-    open: "bg-muted text-muted-foreground",
+    open: "bg-xqa-sky-soft text-xqa-blue",
     submitted: "bg-warning/15 text-warning",
     approved: "bg-success/15 text-success",
     rejected: "bg-destructive/15 text-destructive",
     locked: "bg-muted text-muted-foreground",
   };
   return (
-    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium capitalize", color[s])}>
+    <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold capitalize", color[s])}>
       {s}
     </span>
   );

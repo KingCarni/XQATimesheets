@@ -86,7 +86,7 @@ export function AddEntryForm({
   }
 
   return (
-    <div className="border-border bg-muted/40 mt-3 rounded-md border border-dashed p-3">
+    <div className="mt-3 min-w-[880px] rounded-xl border border-dashed border-border bg-muted/45 p-3 lg:min-w-0">
       <div className="grid grid-cols-[1.4fr_1fr_1.4fr_0.6fr_2fr] gap-2">
         <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
           <option value="">— No project —</option>

@@ -1,46 +1,33 @@
 @import "tailwindcss";
 
 /*
- * Design tokens. Light palette on :root; dark overrides under the media query.
- * Kept intentionally small and neutral — an internal-tool aesthetic.
+ * XQA design tokens. The app stays light and data-dense in the workspace while
+ * navigation uses the dark navy surfaces from the public XQA brand.
  */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f4f8fc;
+  --foreground: #101827;
   --card: #ffffff;
-  --card-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #94a3b8;
-  --primary: #0f172a;
-  --primary-foreground: #f8fafc;
-  --destructive: #dc2626;
+  --card-foreground: #101827;
+  --muted: #eef5fb;
+  --muted-foreground: #647486;
+  --border: #dbe6ef;
+  --input: #d8e3ee;
+  --ring: #2e92d0;
+  --primary: #127fc4;
+  --primary-foreground: #ffffff;
+  --destructive: #ef3f73;
   --destructive-foreground: #ffffff;
-  --success: #16a34a;
-  --warning: #d97706;
-  --radius: 0.5rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b1120;
-    --foreground: #e2e8f0;
-    --card: #0f172a;
-    --card-foreground: #e2e8f0;
-    --muted: #1e293b;
-    --muted-foreground: #94a3b8;
-    --border: #1e293b;
-    --input: #1e293b;
-    --ring: #475569;
-    --primary: #e2e8f0;
-    --primary-foreground: #0f172a;
-    --destructive: #ef4444;
-    --destructive-foreground: #0b1120;
-    --success: #22c55e;
-    --warning: #f59e0b;
-  }
+  --success: #18a058;
+  --warning: #f4a12b;
+  --xqa-navy: #07111a;
+  --xqa-navy-2: #0b2133;
+  --xqa-blue: #127fc4;
+  --xqa-blue-2: #3e9bd1;
+  --xqa-pink: #ef3f73;
+  --xqa-sky-soft: #eaf5fb;
+  --shadow-soft: 0 14px 38px rgba(8, 22, 34, 0.08);
+  --radius: 0.75rem;
 }
 
 @theme inline {
@@ -59,12 +46,24 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-xqa-navy: var(--xqa-navy);
+  --color-xqa-navy-2: var(--xqa-navy-2);
+  --color-xqa-blue: var(--xqa-blue);
+  --color-xqa-blue-2: var(--xqa-blue-2);
+  --color-xqa-pink: var(--xqa-pink);
+  --color-xqa-sky-soft: var(--xqa-sky-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at 85% 0%, rgba(62, 155, 209, 0.16), transparent 30rem),
+    linear-gradient(180deg, #f8fbfe 0%, var(--background) 38rem);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }

@@ -1,5 +1,4 @@
 import { requireUser } from "@/lib/auth/session";
-import { createClient } from "@/lib/supabase/server";
 import { getWeekData } from "@/lib/timesheets/queries";
 import { getWeekRange, todayStr } from "@/lib/timesheets/week";
 import { isPeriodEditable } from "@/types/domain";
@@ -35,8 +34,7 @@ export default async function MyTimesheetPage({
   const seed = weekParam && DATE_RE.test(weekParam) ? weekParam : todayStr();
   const weekStart = getWeekRange(seed).start;
 
-  const supabase = await createClient();
-  const data = await getWeekData(supabase, user.profile, weekStart);
+  const data = await getWeekData(user.profile, weekStart);
   const editable = data.period ? isPeriodEditable(data.period.status) : true;
 
   return (

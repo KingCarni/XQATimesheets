@@ -8,8 +8,8 @@ export const Select = React.forwardRef<HTMLSelectElement, React.ComponentProps<"
     <select
       ref={ref}
       className={cn(
-        "border-input bg-card h-9 w-full rounded-md border px-2 text-sm",
-        "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+        "border-input bg-card h-9 w-full rounded-lg border px-2 text-sm shadow-inner shadow-slate-100/60",
+        "focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none",
         "disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}

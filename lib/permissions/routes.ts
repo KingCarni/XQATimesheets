@@ -40,7 +40,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/my-timesheet", label: "My Timesheet", roles: ["employee", "manager", "admin"] },
-  { href: "/team", label: "Team", roles: ["manager", "admin"] },
+  { href: "/team", label: "Team Timesheets", roles: ["manager", "admin"] },
   { href: "/approvals", label: "Approvals", roles: ["manager", "admin"] },
   { href: "/reports", label: "Reports", roles: ["manager", "admin"] },
   { href: "/admin", label: "Admin", roles: ["admin"] },

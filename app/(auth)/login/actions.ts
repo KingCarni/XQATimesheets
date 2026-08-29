@@ -1,8 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
 
-import { createClient } from "@/lib/supabase/server";
+import { signIn } from "@/auth";
 import { DEFAULT_AUTHED_PATH } from "@/lib/permissions/routes";
 
 export type LoginState = { error: string | null };
@@ -20,10 +21,13 @@ export async function signInWithPassword(
     return { error: "Enter your email and password." };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) {
-    return { error: error.message };
+  try {
+    await signIn("credentials", { email, password, redirectTo });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { error: "Invalid email or password." };
+    }
+    throw error;
   }
 
   redirect(redirectTo);

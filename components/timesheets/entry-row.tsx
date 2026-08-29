@@ -104,7 +104,7 @@ export function EntryRow({
   }
 
   return (
-    <div className="border-border grid grid-cols-[1.4fr_1fr_1.4fr_0.6fr_2fr_auto] items-center gap-2 border-b py-2">
+    <div className="grid min-w-[880px] grid-cols-[1.4fr_1fr_1.4fr_0.6fr_2fr_auto] items-center gap-2 border-b border-border py-2.5 lg:min-w-0">
       <Select
         value={projectId}
         disabled={!editable}
