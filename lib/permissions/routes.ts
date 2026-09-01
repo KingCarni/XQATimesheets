@@ -7,8 +7,9 @@ export const DEFAULT_AUTHED_PATH = "/my-timesheet";
  * Coarse route → allowed-roles map, used by middleware and the nav.
  * Matching is longest-prefix: `/admin` covers `/admin/users`, etc.
  *
- * Authoritative authorization is still enforced per-action and by RLS —
- * this only shapes navigation and blocks obviously-wrong page loads.
+ * Authoritative authorization is still enforced per-action and by the
+ * server-side permission/query layer; this only shapes navigation and
+ * blocks obviously-wrong page loads.
  */
 const ROUTE_ROLES: Array<{ prefix: string; roles: readonly AppRole[] }> = [
   { prefix: "/my-timesheet", roles: ["employee", "manager", "admin"] },
@@ -21,12 +22,10 @@ const ROUTE_ROLES: Array<{ prefix: string; roles: readonly AppRole[] }> = [
 
 export function allowedRolesForPath(pathname: string): readonly AppRole[] | null {
   const match = ROUTE_ROLES.filter((r) => pathname === r.prefix || pathname.startsWith(r.prefix + "/"))
-    // longest prefix wins
     .sort((a, b) => b.prefix.length - a.prefix.length)[0];
   return match ? match.roles : null;
 }
 
-/** Unknown routes are allowed for any signed-in user (e.g. `/`, settings). */
 export function isRouteAllowed(pathname: string, role: AppRole): boolean {
   const roles = allowedRolesForPath(pathname);
   return roles ? roles.includes(role) : true;
@@ -40,6 +39,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/my-timesheet", label: "My Timesheet", roles: ["employee", "manager", "admin"] },
+  { href: "/pto", label: "Time Off", roles: ["employee", "manager", "admin"] },
   { href: "/team", label: "Team Timesheets", roles: ["manager", "admin"] },
   { href: "/approvals", label: "Approvals", roles: ["manager", "admin"] },
   { href: "/reports", label: "Reports", roles: ["manager", "admin"] },
