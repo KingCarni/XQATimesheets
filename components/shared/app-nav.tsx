@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   CalendarCheck,
+  CalendarOff,
   Clock3,
   FolderKanban,
   Settings,
@@ -16,6 +17,7 @@ import type { NavItem } from "@/lib/permissions/routes";
 
 const iconByHref = {
   "/my-timesheet": Clock3,
+  "/pto": CalendarOff,
   "/approvals": CalendarCheck,
   "/team": Users,
   "/reports": BarChart3,
