@@ -16,6 +16,10 @@ import {
 import { getOrCreatePeriod, toEntryRow } from "@/lib/timesheets/queries";
 import { getWeekRange, shiftWeek, toDateStr, fromDateStr, type DateStr } from "@/lib/timesheets/week";
 import { isPeriodEditable } from "@/types/domain";
+import {
+  validateWeekForSubmission,
+  type WeekSubmissionValidation,
+} from "@/lib/timesheets/validation";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -167,6 +171,70 @@ export async function removeEntry(id: string): Promise<ActionResult<{ id: string
     return { ok: true, data: { id } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not delete entry" };
+  }
+}
+
+export async function validateWeek(
+  weekStart: DateStr,
+): Promise<ActionResult<WeekSubmissionValidation>> {
+  try {
+    const { profile } = await context();
+    const validation = await validateWeekForSubmission(profile, weekStart);
+    return { ok: true, data: validation };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not validate week" };
+  }
+}
+
+export async function submitWeek(
+  weekStart: DateStr,
+): Promise<ActionResult<WeekSubmissionValidation>> {
+  try {
+    const { user, profile } = await context();
+    const validation = await validateWeekForSubmission(profile, weekStart);
+    if (!validation.ok) return { ok: false, error: "Week is incomplete." };
+
+    const period = await getOrCreatePeriod(profile, weekStart);
+    if (period.status !== "open" && period.status !== "rejected") {
+      throw new Error("Only open or rejected weeks can be submitted.");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.timesheet_periods.updateMany({
+        where: { id: period.id, status: { in: ["open", "rejected"] } },
+        data: {
+          status: "submitted",
+          submitted_at: new Date(),
+          submitted_by: user.id,
+          rejection_reason: null,
+        },
+      });
+      if (updated.count !== 1) throw new Error("This week is no longer submit-ready.");
+
+      await tx.approvals.create({
+        data: {
+          timesheet_period_id: period.id,
+          actor_user_id: user.id,
+          action: "submit",
+          comment: `Submitted ${validation.accountedHours}h.`,
+        },
+      });
+      await tx.audit_history.create({
+        data: {
+          entity_type: "timesheet_period",
+          entity_id: period.id,
+          action: "submit",
+          actor_user_id: user.id,
+          metadata: validation,
+        },
+      });
+    });
+
+    revalidatePath("/my-timesheet");
+    revalidatePath("/approvals");
+    return { ok: true, data: validation };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not submit week" };
   }
 }
 

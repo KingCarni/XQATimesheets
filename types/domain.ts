@@ -41,7 +41,11 @@ export const AUDIT_ENTITY_TYPES = [
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 /** A period is read-only for the employee once it reaches these states. */
-export const LOCKED_TIMESHEET_STATUSES: readonly TimesheetStatus[] = ["approved", "locked"];
+export const LOCKED_TIMESHEET_STATUSES: readonly TimesheetStatus[] = [
+  "submitted",
+  "approved",
+  "locked",
+];
 
 export function isPeriodEditable(status: TimesheetStatus): boolean {
   return !LOCKED_TIMESHEET_STATUSES.includes(status);

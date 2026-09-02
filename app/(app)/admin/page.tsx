@@ -1,13 +1,28 @@
 import { requireRole } from "@/lib/auth/session";
-import { PagePlaceholder } from "@/components/shared/page-placeholder";
+import { getAdminEmployeeData } from "@/lib/admin/employees";
+import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
+import { EmployeeCard } from "@/components/admin/employee-card";
 
 export default async function AdminPage() {
   await requireRole("admin");
+  const { users, projects } = await getAdminEmployeeData();
+
   return (
-    <PagePlaceholder
-      title="Admin & Settings"
-      ticket="TS-050 / TS-051 / TS-052"
-      description="Manage users, projects, assignments, platforms, activity types, templates, and audit."
-    />
+    <div className="mx-auto flex max-w-7xl flex-col gap-5">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
+        <p className="text-muted-foreground text-sm">
+          Create employees, manage access, and assign project scope.
+        </p>
+      </div>
+
+      <CreateEmployeeForm projects={projects} />
+
+      <section className="grid gap-4">
+        {users.map((user) => (
+          <EmployeeCard key={user.id} user={user} projects={projects} />
+        ))}
+      </section>
+    </div>
   );
 }

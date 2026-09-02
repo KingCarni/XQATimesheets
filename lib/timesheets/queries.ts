@@ -15,7 +15,6 @@ import { prisma } from "@/lib/prisma";
 import type { Row } from "@/types/database";
 import {
   getWeekRange,
-  expectedHoursForWeek,
   type DateStr,
   type WeekRange,
 } from "./week";
@@ -31,23 +30,25 @@ export type WeekData = {
   templates: Row<"entry_templates">[];
 };
 
-function dateOnly(value: Date): string {
+export function dateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
-function timestamp(value: Date): string {
+export function timestamp(value: Date): string {
   return value.toISOString();
 }
 
-function decimal(value: Prisma.Decimal): number {
+export function decimal(value: Prisma.Decimal): number {
   return value.toNumber();
 }
 
-function dateInput(value: DateStr): Date {
+export function dateInput(value: DateStr): Date {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
-export function toEmployeeProfileRow(row: employee_profiles): Row<"employee_profiles"> {
+export function toEmployeeProfileRow(
+  row: employee_profiles,
+): Row<"employee_profiles"> {
   return {
     ...row,
     default_daily_hours: decimal(row.default_daily_hours),
@@ -58,21 +59,29 @@ export function toEmployeeProfileRow(row: employee_profiles): Row<"employee_prof
   };
 }
 
-function toPeriodRow(row: timesheet_periods): Row<"timesheet_periods"> {
+export function toPeriodRow(
+  row: timesheet_periods,
+): Row<"timesheet_periods"> {
   return {
     ...row,
     week_start_date: dateOnly(row.week_start_date),
     week_end_date: dateOnly(row.week_end_date),
     expected_hours: decimal(row.expected_hours),
     total_hours: decimal(row.total_hours),
-    submitted_at: row.submitted_at ? timestamp(row.submitted_at) : null,
-    locked_at: row.locked_at ? timestamp(row.locked_at) : null,
+    submitted_at: row.submitted_at
+      ? timestamp(row.submitted_at)
+      : null,
+    locked_at: row.locked_at
+      ? timestamp(row.locked_at)
+      : null,
     created_at: timestamp(row.created_at),
     updated_at: timestamp(row.updated_at),
   };
 }
 
-export function toEntryRow(row: time_entries): Row<"time_entries"> {
+export function toEntryRow(
+  row: time_entries,
+): Row<"time_entries"> {
   return {
     ...row,
     entry_date: dateOnly(row.entry_date),
@@ -82,7 +91,9 @@ export function toEntryRow(row: time_entries): Row<"time_entries"> {
   };
 }
 
-function toProjectRow(row: projects): Row<"projects"> {
+export function toProjectRow(
+  row: projects,
+): Row<"projects"> {
   return {
     ...row,
     created_at: timestamp(row.created_at),
@@ -90,7 +101,9 @@ function toProjectRow(row: projects): Row<"projects"> {
   };
 }
 
-function toPlatformRow(row: platforms): Row<"platforms"> {
+export function toPlatformRow(
+  row: platforms,
+): Row<"platforms"> {
   return {
     ...row,
     created_at: timestamp(row.created_at),
@@ -98,7 +111,9 @@ function toPlatformRow(row: platforms): Row<"platforms"> {
   };
 }
 
-function toActivityTypeRow(row: activity_types): Row<"activity_types"> {
+export function toActivityTypeRow(
+  row: activity_types,
+): Row<"activity_types"> {
   return {
     ...row,
     created_at: timestamp(row.created_at),
@@ -106,7 +121,9 @@ function toActivityTypeRow(row: activity_types): Row<"activity_types"> {
   };
 }
 
-function toTemplateRow(row: entry_templates): Row<"entry_templates"> {
+function toTemplateRow(
+  row: entry_templates,
+): Row<"entry_templates"> {
   return {
     ...row,
     created_at: timestamp(row.created_at),
@@ -118,6 +135,9 @@ function toTemplateRow(row: entry_templates): Row<"entry_templates"> {
  * Ensure a timesheet period exists for the given week, creating an `open` one
  * lazily (we don't want empty periods created just by viewing). Safe against a
  * concurrent insert via a re-select on unique violation.
+ *
+ * `expected_hours` is retained only for database compatibility during this
+ * pass. Target hours are no longer part of timesheet behavior.
  */
 export async function getOrCreatePeriod(
   profile: Row<"employee_profiles">,
@@ -136,7 +156,7 @@ export async function getOrCreatePeriod(
       employee_profile_id: profile.id,
       week_start_date: dateInput(week.start),
       week_end_date: dateInput(week.end),
-      expected_hours: expectedHoursForWeek(profile.default_daily_hours),
+      expected_hours: 0,
     },
     update: {},
   });
@@ -145,16 +165,31 @@ export async function getOrCreatePeriod(
 }
 
 /** Active projects the employee is assigned to (falls back to all active). */
-async function loadProjects(profileId: string): Promise<Row<"projects">[]> {
+async function loadProjects(
+  profileId: string,
+): Promise<Row<"projects">[]> {
   const assignments = await prisma.project_assignments.findMany({
-    where: { employee_profile_id: profileId, is_active: true },
-    select: { project_id: true },
+    where: {
+      employee_profile_id: profileId,
+      is_active: true,
+    },
+    select: {
+      project_id: true,
+    },
   });
 
-  const ids = assignments.map((a) => a.project_id);
+  const ids = assignments.map(
+    (assignment) => assignment.project_id,
+  );
+
   const projects = await prisma.projects.findMany({
-    where: { is_active: true, ...(ids.length ? { id: { in: ids } } : {}) },
-    orderBy: { name: "asc" },
+    where: {
+      is_active: true,
+      ...(ids.length ? { id: { in: ids } } : {}),
+    },
+    orderBy: {
+      name: "asc",
+    },
   });
 
   return projects.map(toProjectRow);
@@ -167,7 +202,14 @@ export async function getWeekData(
 ): Promise<WeekData> {
   const week = getWeekRange(weekStart);
 
-  const [period, entries, projects, platforms, activityTypes, templates] = await Promise.all([
+  const [
+    period,
+    entries,
+    projects,
+    platforms,
+    activityTypes,
+    templates,
+  ] = await Promise.all([
     prisma.timesheet_periods.findUnique({
       where: {
         employee_profile_id_week_start_date: {
@@ -176,25 +218,53 @@ export async function getWeekData(
         },
       },
     }),
+
     prisma.time_entries.findMany({
       where: {
         employee_profile_id: profile.id,
-        entry_date: { gte: dateInput(week.start), lte: dateInput(week.end) },
+        entry_date: {
+          gte: dateInput(week.start),
+          lte: dateInput(week.end),
+        },
       },
-      orderBy: [{ entry_date: "asc" }, { created_at: "asc" }],
+      orderBy: [
+        {
+          entry_date: "asc",
+        },
+        {
+          created_at: "asc",
+        },
+      ],
     }),
+
     loadProjects(profile.id),
+
     prisma.platforms.findMany({
-      where: { is_active: true },
-      orderBy: { sort_order: "asc" },
+      where: {
+        is_active: true,
+      },
+      orderBy: {
+        sort_order: "asc",
+      },
     }),
+
     prisma.activity_types.findMany({
-      where: { is_active: true },
-      orderBy: { sort_order: "asc" },
+      where: {
+        is_active: true,
+      },
+      orderBy: {
+        sort_order: "asc",
+      },
     }),
+
     prisma.entry_templates.findMany({
-      where: { employee_profile_id: profile.id, is_active: true },
-      orderBy: { sort_order: "asc" },
+      where: {
+        employee_profile_id: profile.id,
+        is_active: true,
+      },
+      orderBy: {
+        sort_order: "asc",
+      },
     }),
   ]);
 

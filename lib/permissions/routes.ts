@@ -4,17 +4,14 @@ export const LOGIN_PATH = "/login";
 export const DEFAULT_AUTHED_PATH = "/my-timesheet";
 
 /**
- * Coarse route → allowed-roles map, used by middleware and the nav.
- * Matching is longest-prefix: `/admin` covers `/admin/users`, etc.
- *
- * Authoritative authorization is still enforced per-action and by RLS —
- * this only shapes navigation and blocks obviously-wrong page loads.
+ * Coarse route gate used by middleware and navigation.
+ * Authoritative authorization is enforced by server-side checks.
  */
 const ROUTE_ROLES: Array<{ prefix: string; roles: readonly AppRole[] }> = [
   { prefix: "/my-timesheet", roles: ["employee", "manager", "admin"] },
   { prefix: "/pto", roles: ["employee", "manager", "admin"] },
-  { prefix: "/team", roles: ["manager", "admin"] },
-  { prefix: "/approvals", roles: ["manager", "admin"] },
+  { prefix: "/team", roles: ["employee", "manager", "admin"] },
+  { prefix: "/approvals", roles: ["employee", "manager", "admin"] },
   { prefix: "/reports", roles: ["manager", "admin"] },
   { prefix: "/admin", roles: ["admin"] },
 ];
@@ -40,12 +37,17 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/my-timesheet", label: "My Timesheet", roles: ["employee", "manager", "admin"] },
-  { href: "/team", label: "Team Timesheets", roles: ["manager", "admin"] },
-  { href: "/approvals", label: "Approvals", roles: ["manager", "admin"] },
+  { href: "/team", label: "Team Timesheets", roles: ["employee", "manager", "admin"] },
+  { href: "/approvals", label: "Approvals", roles: ["employee", "manager", "admin"] },
   { href: "/reports", label: "Reports", roles: ["manager", "admin"] },
-  { href: "/admin", label: "Admin", roles: ["admin"] },
+  { href: "/admin", label: "Employees", roles: ["admin"] },
+  { href: "/admin/projects", label: "Projects", roles: ["admin"] },
 ];
 
-export function navItemsForRole(role: AppRole): NavItem[] {
-  return NAV_ITEMS.filter((item) => item.roles.includes(role));
+export function navItemsForRole(role: AppRole, opts: { canReview?: boolean } = {}): NavItem[] {
+  return NAV_ITEMS.filter((item) => {
+    if (!item.roles.includes(role)) return false;
+    if ((item.href === "/team" || item.href === "/approvals") && !opts.canReview) return false;
+    return true;
+  });
 }

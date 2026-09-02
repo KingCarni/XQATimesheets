@@ -3,7 +3,12 @@ import { getWeekData } from "@/lib/timesheets/queries";
 import { getWeekRange, todayStr } from "@/lib/timesheets/week";
 import { isPeriodEditable } from "@/types/domain";
 import { WeeklyTimesheet } from "@/components/timesheets/weekly-timesheet";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -22,28 +27,38 @@ export default async function MyTimesheetPage({
           <CardHeader>
             <CardTitle>No employee profile</CardTitle>
           </CardHeader>
+
           <CardContent className="text-muted-foreground text-sm">
-            Your account isn&apos;t linked to an employee profile yet, so there&apos;s nowhere to
-            log time. Ask an admin to create one for you.
+            Your account isn&apos;t linked to an employee profile yet, so
+            there&apos;s nowhere to log time. Ask an admin to create one for
+            you.
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const seed = weekParam && DATE_RE.test(weekParam) ? weekParam : todayStr();
+  const seed =
+    weekParam && DATE_RE.test(weekParam)
+      ? weekParam
+      : todayStr();
+
   const weekStart = getWeekRange(seed).start;
 
   const data = await getWeekData(user.profile, weekStart);
-  const editable = data.period ? isPeriodEditable(data.period.status) : true;
+
+  const editable = data.period
+    ? isPeriodEditable(data.period.status)
+    : true;
 
   return (
     <WeeklyTimesheet
       key={weekStart}
       weekStart={weekStart}
       week={data.week}
-      defaultDailyHours={Number(user.profile.default_daily_hours)}
       periodStatus={data.period?.status ?? null}
+      submittedAt={data.period?.submitted_at ?? null}
+      rejectionReason={data.period?.rejection_reason ?? null}
       editable={editable}
       initialEntries={data.entries}
       catalogs={{

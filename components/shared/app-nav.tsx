@@ -20,7 +20,7 @@ const iconByHref = {
   "/team": Users,
   "/reports": BarChart3,
   "/admin": Settings,
-  "/projects": FolderKanban,
+  "/admin/projects": FolderKanban,
 } as const;
 
 export function AppNav({ items }: { items: NavItem[] }) {

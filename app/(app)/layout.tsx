@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { ShieldCheck } from "lucide-react";
 
+import { hasReviewScope } from "@/lib/auth/authorization";
 import { requireUser } from "@/lib/auth/session";
 import { navItemsForRole } from "@/lib/permissions/routes";
 import { AppNav } from "@/components/shared/app-nav";
@@ -8,7 +9,8 @@ import { SignOutButton } from "@/components/shared/sign-out-button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const items = navItemsForRole(user.role);
+  const canReview = await hasReviewScope(user);
+  const items = navItemsForRole(user.role, { canReview });
   const displayName = user.profile?.full_name ?? user.email;
 
   return (

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
+import { randomBytes, randomInt, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 
 const KEY_LENGTH = 64;
 const COST = 16384;
@@ -25,6 +25,21 @@ export async function hashPassword(password: string): Promise<string> {
   });
 
   return `scrypt$${COST}$${BLOCK_SIZE}$${PARALLELIZATION}$${salt}$${key.toString("base64url")}`;
+}
+
+/**
+ * A random, human-typeable temporary password. Excludes visually ambiguous
+ * characters (0/O, 1/l/I) so a value read off a screen can be retyped
+ * reliably. Callers must hash it immediately and never persist or log the
+ * plaintext beyond returning it once to the admin who generated it.
+ */
+export function generateTemporaryPassword(length = 16): string {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[randomInt(alphabet.length)];
+  }
+  return out;
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
