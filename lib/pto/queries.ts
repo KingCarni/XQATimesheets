@@ -1,17 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import type { CurrentUser } from "@/lib/auth/session";
 
-export async function getPtoActivityTypes() {
+export async function getPtoActivityTypes(organizationId: string) {
   return prisma.activity_types.findMany({
-    where: { is_active: true, is_pto: true },
+    where: { is_active: true, is_pto: true, organization_id: organizationId },
     orderBy: [{ sort_order: "asc" }, { name: "asc" }],
     select: { id: true, name: true },
   });
 }
 
-export async function getOwnPtoRequests(profileId: string) {
+export async function getOwnPtoRequests(profileId: string, organizationId: string) {
   const rows = await prisma.pto_requests.findMany({
-    where: { employee_profile_id: profileId },
+    where: { employee_profile_id: profileId, organization_id: organizationId },
     include: {
       activity_type: { select: { name: true } },
       approver: { select: { email: true } },
@@ -34,12 +34,13 @@ export async function getOwnPtoRequests(profileId: string) {
   }));
 }
 
-async function getManagedProjectIds(user: CurrentUser) {
+async function getManagedProjectIds(user: CurrentUser, organizationId: string) {
   if (!user.profile) return [] as string[];
 
   const assignments = await prisma.project_assignments.findMany({
     where: {
       employee_profile_id: user.profile.id,
+      organization_id: organizationId,
       is_active: true,
       assignment_role: { in: ["lead", "manager"] },
     },
@@ -49,21 +50,24 @@ async function getManagedProjectIds(user: CurrentUser) {
   return assignments.map((assignment) => assignment.project_id);
 }
 
-export async function getReviewablePtoRequests(user: CurrentUser) {
+export async function getReviewablePtoRequests(user: CurrentUser, organizationId: string) {
   if (user.role === "employee") return [];
 
-  const where = user.role === "admin"
-    ? {}
-    : {
-        employee_profile: {
-          project_assignments: {
-            some: {
-              is_active: true,
-              project_id: { in: await getManagedProjectIds(user) },
+  const where =
+    user.role === "admin"
+      ? { organization_id: organizationId }
+      : {
+          organization_id: organizationId,
+          employee_profile: {
+            project_assignments: {
+              some: {
+                is_active: true,
+                organization_id: organizationId,
+                project_id: { in: await getManagedProjectIds(user, organizationId) },
+              },
             },
           },
-        },
-      };
+        };
 
   const rows = await prisma.pto_requests.findMany({
     where,
@@ -96,20 +100,22 @@ export async function getReviewablePtoRequests(user: CurrentUser) {
   }));
 }
 
-export async function canReviewPtoRequest(user: CurrentUser, requestId: string) {
+export async function canReviewPtoRequest(user: CurrentUser, requestId: string, organizationId: string) {
   if (user.role === "admin") return true;
   if (user.role !== "manager" || !user.profile) return false;
 
-  const managedProjectIds = await getManagedProjectIds(user);
+  const managedProjectIds = await getManagedProjectIds(user, organizationId);
   if (!managedProjectIds.length) return false;
 
   const request = await prisma.pto_requests.findFirst({
     where: {
       id: requestId,
+      organization_id: organizationId,
       employee_profile: {
         project_assignments: {
           some: {
             is_active: true,
+            organization_id: organizationId,
             project_id: { in: managedProjectIds },
           },
         },

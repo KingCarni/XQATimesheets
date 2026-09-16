@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireRole } from "@/lib/auth/session";
+import { requireWritableOrganizationAdmin } from "@/lib/tenant/context";
 import { getProjectDeletionBlockers } from "@/lib/admin/deletion";
 import { prisma } from "@/lib/prisma";
 
@@ -19,9 +19,13 @@ function normalizedName(raw: FormDataEntryValue | null): string {
   return z.string().min(2, "Project name is required.").parse(String(raw ?? "").trim());
 }
 
-async function assertNameAvailable(name: string, excludeId?: string) {
+async function assertNameAvailable(name: string, organizationId: string, excludeId?: string) {
   const existing = await prisma.projects.findFirst({
-    where: { name: { equals: name, mode: "insensitive" }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    where: {
+      name: { equals: name, mode: "insensitive" },
+      organization_id: organizationId,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
     select: { id: true },
   });
   if (existing) throw new Error("A project with that name already exists.");
@@ -32,15 +36,15 @@ export async function createProject(
   formData: FormData,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireRole("admin");
+    const { organization } = await requireWritableOrganizationAdmin();
 
     const name = normalizedName(formData.get("name"));
     const requiresPlatform = String(formData.get("requiresPlatform") ?? "") === "on";
 
-    await assertNameAvailable(name);
+    await assertNameAvailable(name, organization.id);
 
     const project = await prisma.projects.create({
-      data: { name, requires_platform: requiresPlatform, is_active: true },
+      data: { name, requires_platform: requiresPlatform, is_active: true, organization_id: organization.id },
       select: { id: true },
     });
 
@@ -59,19 +63,20 @@ export async function updateProject(
   formData: FormData,
 ): Promise<ActionResult<{ updated: true }>> {
   try {
-    await requireRole("admin");
+    const { organization } = await requireWritableOrganizationAdmin();
 
     const id = z.string().uuid().parse(String(formData.get("id") ?? ""));
     const name = normalizedName(formData.get("name"));
     const requiresPlatform = String(formData.get("requiresPlatform") ?? "") === "on";
     const isActive = String(formData.get("isActive") ?? "") === "on";
 
-    await assertNameAvailable(name, id);
+    await assertNameAvailable(name, organization.id, id);
 
-    await prisma.projects.update({
-      where: { id },
+    const updated = await prisma.projects.updateMany({
+      where: { id, organization_id: organization.id },
       data: { name, requires_platform: requiresPlatform, is_active: isActive },
     });
+    if (updated.count !== 1) throw new Error("Project not found.");
 
     revalidatePath("/admin/projects");
     revalidatePath("/admin");
@@ -89,11 +94,14 @@ export async function deleteProject(
   formData: FormData,
 ): Promise<ActionResult<{ deleted: true }>> {
   try {
-    await requireRole("admin");
+    const { organization } = await requireWritableOrganizationAdmin();
 
     const id = z.string().uuid().parse(String(formData.get("id") ?? ""));
 
-    const project = await prisma.projects.findUnique({ where: { id }, select: { id: true, name: true } });
+    const project = await prisma.projects.findFirst({
+      where: { id, organization_id: organization.id },
+      select: { id: true, name: true },
+    });
     if (!project) throw new Error("Project not found.");
 
     const blockers = await getProjectDeletionBlockers(id);
@@ -103,7 +111,7 @@ export async function deleteProject(
       );
     }
 
-    await prisma.projects.delete({ where: { id } });
+    await prisma.projects.deleteMany({ where: { id, organization_id: organization.id } });
 
     revalidatePath("/admin/projects");
     revalidatePath("/admin");

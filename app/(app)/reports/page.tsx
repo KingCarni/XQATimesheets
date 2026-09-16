@@ -1,58 +1,100 @@
-import { requireRole } from "@/lib/auth/session";
-import { parseReportFilters, type ReportSearchParams } from "@/lib/reports/filters";
+import Link from "next/link";
+
+import { requireOrganizationReviewer } from "@/lib/tenant/context";
+import type { ReportFilters, ReportStatusPreset } from "@/lib/reports/queries";
 import {
   getHoursByActivityType,
   getHoursByEmployee,
   getHoursByPlatform,
   getHoursByProject,
-  getHoursByWeek,
+  getHoursByPtoType,
   getReportFilterOptions,
   getReportRows,
   getReportSummary,
   REPORT_STATUS_PRESETS,
 } from "@/lib/reports/queries";
+import {
+  currentAnchor,
+  isCurrentPeriod,
+  normalizeAnchor,
+  normalizePeriodType,
+  resolvePeriod,
+  shiftPeriodAnchor,
+} from "@/lib/reports/period";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import type { HoursBreakdownRow } from "@/lib/reports/queries";
+import { CollapsibleSection } from "@/components/shared/collapsible-section";
+import { DonutChart } from "@/components/charts/donut-chart";
+import { BarList } from "@/components/charts/bar-list";
+import { WeeklyEntries } from "@/components/reports/weekly-entries";
 
-const ROW_LIMIT = 200;
-
-const STATUS_LABELS: Record<keyof typeof REPORT_STATUS_PRESETS, string> = {
+const STATUS_LABELS: Record<ReportStatusPreset, string> = {
   approved: "Approved only",
   approved_and_submitted: "Approved + Submitted",
   all: "All statuses",
 };
 
-export default async function ReportsPage({
-  searchParams,
-}: {
-  searchParams: Promise<ReportSearchParams>;
-}) {
-  const user = await requireRole("manager", "admin");
-  const params = await searchParams;
-  const filters = parseReportFilters(params);
+type SearchParams = {
+  period?: string;
+  anchor?: string;
+  employee?: string;
+  project?: string;
+  platform?: string;
+  activity?: string;
+  status?: string;
+};
 
-  const [options, summary, byProject, byEmployee, byPlatform, byActivity, byWeek, detail] = await Promise.all([
-    getReportFilterOptions(user),
-    getReportSummary(user, filters),
-    getHoursByProject(user, filters),
-    getHoursByEmployee(user, filters),
-    getHoursByPlatform(user, filters),
-    getHoursByActivityType(user, filters),
-    getHoursByWeek(user, filters),
-    getReportRows(user, filters, { limit: ROW_LIMIT }),
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const { user, organization, membership } = await requireOrganizationReviewer();
+  const viewer = { ...user, role: membership.role };
+  const params = await searchParams;
+
+  const periodType = normalizePeriodType(params.period);
+  const anchor = normalizeAnchor(params.anchor);
+  const period = resolvePeriod(periodType, anchor);
+  // Week-first view defaults to all logged hours so the current week isn't
+  // empty before approvals happen; the selector still narrows to approved.
+  const statusPreset = (params.status && params.status in REPORT_STATUS_PRESETS ? params.status : "all") as ReportStatusPreset;
+
+  const filters: ReportFilters = {
+    organizationId: organization.id,
+    start: period.start,
+    end: period.end,
+    employeeId: params.employee || undefined,
+    projectId: params.project || undefined,
+    platformId: params.platform || undefined,
+    activityTypeId: params.activity || undefined,
+    status: statusPreset,
+  };
+
+  const [options, summary, byProject, byEmployee, byPlatform, byActivity, byPto, detail] = await Promise.all([
+    getReportFilterOptions(viewer, organization.id),
+    getReportSummary(viewer, filters),
+    getHoursByProject(viewer, filters),
+    getHoursByEmployee(viewer, filters),
+    getHoursByPlatform(viewer, filters),
+    getHoursByActivityType(viewer, filters),
+    getHoursByPtoType(viewer, filters),
+    getReportRows(viewer, filters, {}),
   ]);
 
-  const exportQuery = new URLSearchParams();
-  if (params.start) exportQuery.set("start", params.start);
-  if (params.end) exportQuery.set("end", params.end);
-  if (params.employee) exportQuery.set("employee", params.employee);
-  if (params.project) exportQuery.set("project", params.project);
-  if (params.platform) exportQuery.set("platform", params.platform);
-  if (params.activity) exportQuery.set("activity", params.activity);
-  if (params.status) exportQuery.set("status", params.status);
-  const exportBase = `/api/reports/export?${exportQuery.toString()}`;
+  const nonBillableHours = Math.max(0, Math.round((summary.totalHours - summary.billableHours) * 100) / 100);
+
+  // Preserve filters + period across navigation; only the anchor changes.
+  const baseParams = (anchorValue: string) => {
+    const q = new URLSearchParams();
+    q.set("period", periodType);
+    q.set("anchor", anchorValue);
+    if (params.employee) q.set("employee", params.employee);
+    if (params.project) q.set("project", params.project);
+    if (params.platform) q.set("platform", params.platform);
+    if (params.activity) q.set("activity", params.activity);
+    if (params.status) q.set("status", params.status);
+    return q.toString();
+  };
+
+  const exportQuery = baseParams(anchor);
+  const onCurrent = isCurrentPeriod(periodType, anchor);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5">
@@ -66,12 +108,17 @@ export default async function ReportsPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a href={`${exportBase}&format=csv`}>
+          <Link href="/reports/projects">
+            <Button type="button" variant="outline" size="sm">
+              Project report →
+            </Button>
+          </Link>
+          <a href={`/api/reports/export?${exportQuery}&format=csv`}>
             <Button type="button" variant="outline" size="sm">
               Export CSV
             </Button>
           </a>
-          <a href={`${exportBase}&format=xlsx`}>
+          <a href={`/api/reports/export?${exportQuery}&format=xlsx`}>
             <Button type="button" variant="outline" size="sm">
               Export XLSX
             </Button>
@@ -79,52 +126,82 @@ export default async function ReportsPage({
         </div>
       </div>
 
-      <form className="grid gap-2 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-soft)] md:grid-cols-3 lg:grid-cols-7">
-        <Input type="date" name="start" defaultValue={params.start ?? ""} aria-label="Start date" />
-        <Input type="date" name="end" defaultValue={params.end ?? ""} aria-label="End date" />
-        <Select name="employee" defaultValue={params.employee ?? ""}>
-          <option value="">All employees</option>
-          {options.employees.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </Select>
-        <Select name="project" defaultValue={params.project ?? ""}>
-          <option value="">All projects</option>
-          {options.projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </Select>
-        <Select name="platform" defaultValue={params.platform ?? ""}>
-          <option value="">All platforms</option>
-          {options.platforms.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </Select>
-        <Select name="activity" defaultValue={params.activity ?? ""}>
-          <option value="">All work types</option>
-          {options.activityTypes.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </Select>
-        <Select name="status" defaultValue={filters.status ?? "approved"}>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </Select>
-        <Button type="submit" className="lg:col-span-7">
-          Apply Filters
-        </Button>
-      </form>
+      {/* Week-first period controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3 shadow-[var(--shadow-soft)]">
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1 shadow-sm">
+          <Link
+            href={`/reports?${baseParams(shiftPeriodAnchor(periodType, anchor, -1))}`}
+            className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-muted-foreground hover:bg-xqa-sky-soft"
+          >
+            ‹ Prev
+          </Link>
+          <span className="min-w-[190px] px-3 py-1.5 text-center text-sm font-semibold">{period.label}</span>
+          <Link
+            href={`/reports?${baseParams(shiftPeriodAnchor(periodType, anchor, 1))}`}
+            className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-muted-foreground hover:bg-xqa-sky-soft"
+          >
+            Next ›
+          </Link>
+          {!onCurrent ? (
+            <Link href={`/reports?${baseParams(currentAnchor())}`}>
+              <Button type="button" size="sm" className="ml-1">
+                This Week
+              </Button>
+            </Link>
+          ) : null}
+        </div>
+
+        {/* Filters (period mode + scope) */}
+        <form method="GET" className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="anchor" value={anchor} />
+          <Select name="period" defaultValue={periodType} aria-label="Period mode" className="w-32">
+            <option value="weekly">Week</option>
+            <option value="biweekly">Biweekly</option>
+          </Select>
+          <Select name="employee" defaultValue={params.employee ?? ""} aria-label="Employee" className="w-40">
+            <option value="">All employees</option>
+            {options.employees.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+          <Select name="project" defaultValue={params.project ?? ""} aria-label="Project" className="w-36">
+            <option value="">All projects</option>
+            {options.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+          <Select name="platform" defaultValue={params.platform ?? ""} aria-label="Platform" className="w-32">
+            <option value="">All platforms</option>
+            {options.platforms.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+          <Select name="activity" defaultValue={params.activity ?? ""} aria-label="Work type" className="w-36">
+            <option value="">All work types</option>
+            {options.activityTypes.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </Select>
+          <Select name="status" defaultValue={statusPreset} aria-label="Status" className="w-44">
+            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+          <Button type="submit" size="sm">
+            Apply
+          </Button>
+        </form>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Total Hours" value={`${summary.totalHours}h`} />
@@ -134,71 +211,60 @@ export default async function ReportsPage({
         <SummaryCard label="Projects" value={String(summary.projectCount)} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <BreakdownCard title="Hours by Project" rows={byProject} />
-        <BreakdownCard title="Hours by Employee" rows={byEmployee} />
-        <BreakdownCard title="Hours by Platform" rows={byPlatform} />
-        <BreakdownCard title="Hours by Work Type" rows={byActivity} />
+      <div className="grid gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Analytics</p>
+
+        <CollapsibleSection title="Hours by Project" subtitle="Share of logged hours across projects">
+          <DonutChart data={byProject.map((r) => ({ label: r.label, value: r.hours }))} />
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Hours by Work Type" subtitle="Share of hours by activity / work type">
+          <DonutChart data={byActivity.map((r) => ({ label: r.label, value: r.hours }))} />
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Billable vs Non-Billable" subtitle="Proportion of billable time">
+          <DonutChart
+            data={[
+              { label: "Billable", value: summary.billableHours, color: "#059669" },
+              { label: "Non-billable", value: nonBillableHours, color: "#64748b" },
+            ]}
+          />
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Hours by Employee" subtitle="Comparison across employees">
+          <BarList data={byEmployee.map((r) => ({ id: r.id, label: r.label, value: r.hours }))} colorize />
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Hours by Platform" subtitle="Comparison across platforms">
+          <BarList data={byPlatform.map((r) => ({ id: r.id, label: r.label, value: r.hours }))} colorize />
+        </CollapsibleSection>
+
+        {byPto.length > 0 ? (
+          <CollapsibleSection title="Time Off Summary" subtitle="Approved-status hours by time-off type">
+            <DonutChart data={byPto.map((r) => ({ label: r.label, value: r.hours }))} />
+          </CollapsibleSection>
+        ) : null}
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
-        <h2 className="mb-3 text-lg font-semibold">Hours by Week</h2>
-        {byWeek.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No hours in the selected range.</p>
-        ) : (
-          <div className="grid gap-2">
-            {byWeek.map((w) => (
-              <div key={w.weekStart} className="flex items-center justify-between border-b border-border pb-2 text-sm last:border-0">
-                <span className="text-muted-foreground">{w.weekStart}</span>
-                <span className="font-semibold">{w.hours}h</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-[var(--shadow-soft)]">
-        <div className="flex items-center justify-between px-4 py-3">
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Time Entries</h2>
-          {detail.truncated ? (
-            <p className="text-xs text-muted-foreground">
-              Showing the first {ROW_LIMIT} rows on screen — exports include every matching row.
-            </p>
-          ) : null}
+          <p className="text-xs text-muted-foreground">Grouped by week — expand a week for details.</p>
         </div>
-        <table className="w-full min-w-[960px] text-left text-sm">
-          <thead className="border-b border-border text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Project</th>
-              <th className="px-4 py-3">Platform</th>
-              <th className="px-4 py-3">Work Type</th>
-              <th className="px-4 py-3">Hours</th>
-              <th className="px-4 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.rows.map((row) => (
-              <tr key={row.id} className="border-b border-border last:border-0">
-                <td className="px-4 py-3">{row.date}</td>
-                <td className="px-4 py-3 font-semibold">{row.employee}</td>
-                <td className="px-4 py-3">{row.project}</td>
-                <td className="px-4 py-3 text-muted-foreground">{row.platform}</td>
-                <td className="px-4 py-3">{row.workType}</td>
-                <td className="px-4 py-3">{row.hours}h</td>
-                <td className="px-4 py-3 capitalize">{row.status}</td>
-              </tr>
-            ))}
-            {detail.rows.length === 0 ? (
-              <tr>
-                <td className="px-4 py-8 text-center text-muted-foreground" colSpan={7}>
-                  No time entries match these filters.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+        <WeeklyEntries
+          rows={detail.rows.map((r) => ({
+            id: r.id,
+            date: r.date,
+            employee: r.employee,
+            project: r.project,
+            platform: r.platform,
+            workType: r.workType,
+            hours: r.hours,
+            status: r.status,
+            description: r.description,
+          }))}
+          openFirst={periodType === "weekly"}
+        />
       </div>
     </div>
   );
@@ -209,35 +275,6 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-soft)]">
       <p className="text-xl font-semibold tracking-tight">{value}</p>
       <p className="text-muted-foreground text-xs font-medium">{label}</p>
-    </div>
-  );
-}
-
-function BreakdownCard({ title, rows }: { title: string; rows: HoursBreakdownRow[] }) {
-  const max = Math.max(1, ...rows.map((r) => r.hours));
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
-      <h2 className="mb-3 text-lg font-semibold">{title}</h2>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No hours in the selected range.</p>
-      ) : (
-        <div className="grid gap-2">
-          {rows.slice(0, 12).map((row) => (
-            <div key={row.id} className="grid gap-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="truncate pr-2">{row.label}</span>
-                <span className="font-semibold">{row.hours}h</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-muted">
-                <div
-                  className="from-xqa-blue to-xqa-blue-2 h-1.5 rounded-full bg-gradient-to-r"
-                  style={{ width: `${Math.max(4, (row.hours / max) * 100)}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -26,6 +26,8 @@ export type ReportStatusPreset = keyof typeof REPORT_STATUS_PRESETS;
 export const DEFAULT_REPORT_STATUS: ReportStatusPreset = "approved";
 
 export type ReportFilters = {
+  /** Current organization — every report query is scoped to this tenant. */
+  organizationId: string;
   start?: DateStr;
   end?: DateStr;
   employeeId?: string;
@@ -47,9 +49,12 @@ function statusesFor(filters: ReportFilters): TimesheetStatus[] {
  * A `null` reviewable-ids result (admin) means "no employee filter"; an
  * empty array means "no access" and must still filter to nothing.
  */
-async function employeeScopeWhere(viewer: CurrentUser): Promise<Prisma.time_entriesWhereInput> {
+async function employeeScopeWhere(
+  viewer: CurrentUser,
+  organizationId: string,
+): Promise<Prisma.time_entriesWhereInput> {
   if (isAdmin(viewer.role)) return {};
-  const reviewableIds = await getReviewableProfileIds(viewer);
+  const reviewableIds = await getReviewableProfileIds(viewer, organizationId);
   return { employee_profile_id: { in: reviewableIds ?? [] } };
 }
 
@@ -57,7 +62,7 @@ async function buildEntryWhere(
   viewer: CurrentUser,
   filters: ReportFilters,
 ): Promise<Prisma.time_entriesWhereInput> {
-  const scope = await employeeScopeWhere(viewer);
+  const scope = await employeeScopeWhere(viewer, filters.organizationId);
   const statuses = statusesFor(filters);
 
   const entryDate: Prisma.DateTimeFilter = {};
@@ -66,6 +71,8 @@ async function buildEntryWhere(
 
   const where: Prisma.time_entriesWhereInput = {
     ...scope,
+    // Authoritative tenant scope on the entries themselves.
+    organization_id: filters.organizationId,
     timesheet_period: { status: { in: statuses } },
     ...(filters.start || filters.end ? { entry_date: entryDate } : {}),
   };
@@ -86,30 +93,44 @@ export type ReportFilterOptions = {
 };
 
 /** Dropdown/filter option lists, scoped the same way as the report data. */
-export async function getReportFilterOptions(viewer: CurrentUser): Promise<ReportFilterOptions> {
-  const scope = await employeeScopeWhere(viewer);
+export async function getReportFilterOptions(
+  viewer: CurrentUser,
+  organizationId: string,
+): Promise<ReportFilterOptions> {
+  const scope = await employeeScopeWhere(viewer, organizationId);
   const employeeIdFilter =
     "employee_profile_id" in scope ? (scope.employee_profile_id as { in: string[] } | undefined) : undefined;
 
   const [employees, projects, platforms, activityTypes] = await Promise.all([
     prisma.employee_profiles.findMany({
-      where: employeeIdFilter ? { id: employeeIdFilter } : {},
+      where: { organization_id: organizationId, ...(employeeIdFilter ? { id: employeeIdFilter } : {}) },
       select: { id: true, full_name: true },
       orderBy: { full_name: "asc" },
     }),
     isAdmin(viewer.role)
-      ? prisma.projects.findMany({ where: { is_active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      ? prisma.projects.findMany({
+          where: { is_active: true, organization_id: organizationId },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
       : prisma.projects.findMany({
           where: {
             is_active: true,
-            project_assignments: { some: { employee_profile_id: { in: employeeIdFilter?.in ?? [] } } },
+            organization_id: organizationId,
+            project_assignments: {
+              some: { organization_id: organizationId, employee_profile_id: { in: employeeIdFilter?.in ?? [] } },
+            },
           },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         }),
-    prisma.platforms.findMany({ where: { is_active: true }, select: { id: true, name: true }, orderBy: { sort_order: "asc" } }),
+    prisma.platforms.findMany({
+      where: { is_active: true, organization_id: organizationId },
+      select: { id: true, name: true },
+      orderBy: { sort_order: "asc" },
+    }),
     prisma.activity_types.findMany({
-      where: { is_active: true },
+      where: { is_active: true, organization_id: organizationId },
       select: { id: true, name: true },
       orderBy: { sort_order: "asc" },
     }),
@@ -244,6 +265,31 @@ export async function getHoursByActivityType(
     },
     "Unknown work type",
   );
+}
+
+/**
+ * Hours by time-off type (activity types flagged `is_pto`). Used by the PTO
+ * summary analytics section. Returns an empty list when there is no time-off
+ * in range so the section can hide cleanly.
+ */
+export async function getHoursByPtoType(viewer: CurrentUser, filters: ReportFilters): Promise<HoursBreakdownRow[]> {
+  const where = await buildEntryWhere(viewer, filters);
+  const grouped = await prisma.time_entries.groupBy({
+    by: ["activity_type_id"],
+    where: { ...where, activity_type: { is_pto: true } },
+    _sum: { hours: true },
+  });
+  const ids = grouped.map((g) => g.activity_type_id);
+  if (ids.length === 0) return [];
+  const rows = await prisma.activity_types.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+  const labels = new Map(rows.map((r) => [r.id, r.name]));
+  return grouped
+    .map((g) => ({
+      id: g.activity_type_id,
+      label: labels.get(g.activity_type_id) ?? "Unknown",
+      hours: g._sum.hours ? decimal(g._sum.hours) : 0,
+    }))
+    .sort((a, b) => b.hours - a.hours);
 }
 
 export type WeekBreakdownRow = { weekStart: DateStr; hours: number };

@@ -12,6 +12,9 @@ import type {
   ApprovalAction,
   PtoStatus,
   AuditEntityType,
+  ContractStatus,
+  EquipmentStatus,
+  HardwareRequestStatus,
 } from "./domain";
 
 type Timestamps = {
@@ -55,6 +58,12 @@ export type Database = {
           start_date: string | null;
           end_date: string | null;
           can_approve: boolean;
+          nickname: string | null;
+          pronouns: string | null;
+          location: string | null;
+          linkedin_url: string | null;
+          avatar_updated_at: string | null;
+          organization_id: string | null;
         } & Timestamps;
         Insert: {
           id?: string;
@@ -68,6 +77,12 @@ export type Database = {
           start_date?: string | null;
           end_date?: string | null;
           can_approve?: boolean;
+          nickname?: string | null;
+          pronouns?: string | null;
+          location?: string | null;
+          linkedin_url?: string | null;
+          avatar_updated_at?: string | null;
+          organization_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -360,6 +375,137 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["pto_balances"]["Insert"]>;
         Relationships: [];
       };
+      employee_contracts: {
+        Row: {
+          id: string;
+          employee_profile_id: string;
+          title: string;
+          contract_type: string | null;
+          start_date: string;
+          end_date: string | null;
+          status: ContractStatus;
+          notes: string | null;
+          created_by: string | null;
+        } & Timestamps;
+        Insert: {
+          id?: string;
+          employee_profile_id: string;
+          title: string;
+          contract_type?: string | null;
+          start_date: string;
+          end_date?: string | null;
+          status?: ContractStatus;
+          notes?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["employee_contracts"]["Insert"]>;
+        Relationships: [];
+      };
+      contract_attachments: {
+        // NOTE: `file_bytes` (bytea) is intentionally omitted — attachment
+        // bytes are never serialized to Client Components. Downloads go through
+        // the authenticated route handler only.
+        Row: {
+          id: string;
+          contract_id: string;
+          original_filename: string;
+          mime_type: string;
+          size_bytes: number;
+          uploaded_at: string;
+          uploaded_by_user_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          contract_id: string;
+          original_filename: string;
+          mime_type: string;
+          size_bytes: number;
+          uploaded_at?: string;
+          uploaded_by_user_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["contract_attachments"]["Insert"]>;
+        Relationships: [];
+      };
+      equipment_assignments: {
+        Row: {
+          id: string;
+          employee_profile_id: string;
+          name: string;
+          asset_tag: string | null;
+          status: EquipmentStatus;
+          issued_on: string | null;
+          returned_on: string | null;
+          notes: string | null;
+          created_by: string | null;
+        } & Timestamps;
+        Insert: {
+          id?: string;
+          employee_profile_id: string;
+          name: string;
+          asset_tag?: string | null;
+          status?: EquipmentStatus;
+          issued_on?: string | null;
+          returned_on?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["equipment_assignments"]["Insert"]>;
+        Relationships: [];
+      };
+      hardware_requests: {
+        Row: {
+          id: string;
+          employee_profile_id: string;
+          details: string;
+          category: string | null;
+          status: HardwareRequestStatus;
+          review_note: string | null;
+          reviewed_by: string | null;
+          reviewed_at: string | null;
+          created_by: string;
+        } & Timestamps;
+        Insert: {
+          id?: string;
+          employee_profile_id: string;
+          details: string;
+          category?: string | null;
+          status?: HardwareRequestStatus;
+          review_note?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["hardware_requests"]["Insert"]>;
+        Relationships: [];
+      };
+      leave_entitlements: {
+        Row: {
+          id: string;
+          employee_profile_id: string;
+          activity_type_id: string;
+          hours: number;
+          note: string | null;
+          created_by: string | null;
+        } & Timestamps;
+        Insert: {
+          id?: string;
+          employee_profile_id: string;
+          activity_type_id: string;
+          hours?: number;
+          note?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["leave_entitlements"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -370,6 +516,9 @@ export type Database = {
       approval_action: ApprovalAction;
       pto_status: PtoStatus;
       audit_entity_type: AuditEntityType;
+      contract_status: ContractStatus;
+      equipment_status: EquipmentStatus;
+      hardware_request_status: HardwareRequestStatus;
     };
     CompositeTypes: Record<string, never>;
   };

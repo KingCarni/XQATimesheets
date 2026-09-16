@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { addDays } from "date-fns";
 
 import { assertOwnEditableEntry } from "@/lib/auth/authorization";
-import { requireUser } from "@/lib/auth/session";
+import { requireWritableOrganizationContext } from "@/lib/tenant/context";
 import { prisma } from "@/lib/prisma";
 import type { Row } from "@/types/database";
 import {
@@ -26,11 +26,15 @@ export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string
 type Entry = Row<"time_entries">;
 
 async function context() {
-  const user = await requireUser();
+  const { user, organization } = await requireWritableOrganizationContext();
   if (!user.profile) {
     throw new Error("No employee profile is linked to your account. Ask an admin to set one up.");
   }
-  return { user, profile: user.profile };
+  // The profile must belong to the current organization — never write across tenants.
+  if (user.profile.organization_id && user.profile.organization_id !== organization.id) {
+    throw new Error("Your profile does not belong to this organization.");
+  }
+  return { user, profile: user.profile, organizationId: organization.id };
 }
 
 function dateInput(value: DateStr): Date {
@@ -43,6 +47,7 @@ function firstIssue(error: { issues: { message: string }[] }): string {
 
 async function validateEntryCatalog(input: {
   profileId: string;
+  organizationId: string;
   projectId?: string | null;
   platformId?: string | null;
   activityTypeId?: string;
@@ -50,18 +55,18 @@ async function validateEntryCatalog(input: {
   const [activityType, platform, assignments] = await Promise.all([
     input.activityTypeId
       ? prisma.activity_types.findFirst({
-          where: { id: input.activityTypeId, is_active: true },
+          where: { id: input.activityTypeId, organization_id: input.organizationId, is_active: true },
           select: { id: true },
         })
       : Promise.resolve({ id: "" }),
     input.platformId
       ? prisma.platforms.findFirst({
-          where: { id: input.platformId, is_active: true },
+          where: { id: input.platformId, organization_id: input.organizationId, is_active: true },
           select: { id: true },
         })
       : Promise.resolve(null),
     prisma.project_assignments.findMany({
-      where: { employee_profile_id: input.profileId, is_active: true },
+      where: { employee_profile_id: input.profileId, organization_id: input.organizationId, is_active: true },
       select: { project_id: true },
     }),
   ]);
@@ -74,6 +79,7 @@ async function validateEntryCatalog(input: {
   const project = await prisma.projects.findFirst({
     where: {
       id: input.projectId,
+      organization_id: input.organizationId,
       is_active: true,
       ...(allowedProjectIds.length ? { id: { in: allowedProjectIds } } : {}),
     },
@@ -93,20 +99,22 @@ export async function addEntry(input: NewEntryInput): Promise<ActionResult<Entry
   const data = parsed.data;
 
   try {
-    const { user, profile } = await context();
+    const { user, profile, organizationId } = await context();
     await validateEntryCatalog({
       profileId: profile.id,
+      organizationId,
       projectId: data.projectId,
       platformId: data.platformId,
       activityTypeId: data.activityTypeId,
     });
 
-    const period = await getOrCreatePeriod(profile, data.weekStart);
+    const period = await getOrCreatePeriod(profile, data.weekStart, organizationId);
     if (!isPeriodEditable(period.status)) throw new Error("This timesheet period is locked.");
 
     const row = await prisma.time_entries.create({
       data: {
         employee_profile_id: profile.id,
+        organization_id: organizationId,
         timesheet_period_id: period.id,
         entry_date: dateInput(data.entryDate),
         project_id: data.projectId ?? null,
@@ -134,10 +142,11 @@ export async function editEntry(input: EditEntryInput): Promise<ActionResult<Ent
   const { id, ...patch } = parsed.data;
 
   try {
-    const { user, profile } = await context();
-    await assertOwnEditableEntry(user, id);
+    const { user, profile, organizationId } = await context();
+    await assertOwnEditableEntry(user, id, organizationId);
     await validateEntryCatalog({
       profileId: profile.id,
+      organizationId,
       projectId: patch.projectId,
       platformId: patch.platformId,
       activityTypeId: patch.activityTypeId,
@@ -164,8 +173,8 @@ export async function editEntry(input: EditEntryInput): Promise<ActionResult<Ent
 
 export async function removeEntry(id: string): Promise<ActionResult<{ id: string }>> {
   try {
-    const { user } = await context();
-    await assertOwnEditableEntry(user, id);
+    const { user, organizationId } = await context();
+    await assertOwnEditableEntry(user, id, organizationId);
     await prisma.time_entries.delete({ where: { id } });
     revalidatePath("/my-timesheet");
     return { ok: true, data: { id } };
@@ -178,8 +187,8 @@ export async function validateWeek(
   weekStart: DateStr,
 ): Promise<ActionResult<WeekSubmissionValidation>> {
   try {
-    const { profile } = await context();
-    const validation = await validateWeekForSubmission(profile, weekStart);
+    const { profile, organizationId } = await context();
+    const validation = await validateWeekForSubmission(profile, weekStart, organizationId);
     return { ok: true, data: validation };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not validate week" };
@@ -190,11 +199,11 @@ export async function submitWeek(
   weekStart: DateStr,
 ): Promise<ActionResult<WeekSubmissionValidation>> {
   try {
-    const { user, profile } = await context();
-    const validation = await validateWeekForSubmission(profile, weekStart);
+    const { user, profile, organizationId } = await context();
+    const validation = await validateWeekForSubmission(profile, weekStart, organizationId);
     if (!validation.ok) return { ok: false, error: "Week is incomplete." };
 
-    const period = await getOrCreatePeriod(profile, weekStart);
+    const period = await getOrCreatePeriod(profile, weekStart, organizationId);
     if (period.status !== "open" && period.status !== "rejected") {
       throw new Error("Only open or rejected weeks can be submitted.");
     }
@@ -217,6 +226,7 @@ export async function submitWeek(
           actor_user_id: user.id,
           action: "submit",
           comment: `Submitted ${validation.accountedHours}h.`,
+          organization_id: organizationId,
         },
       });
       await tx.audit_history.create({
@@ -226,6 +236,7 @@ export async function submitWeek(
           action: "submit",
           actor_user_id: user.id,
           metadata: validation,
+          organization_id: organizationId,
         },
       });
     });
@@ -240,10 +251,11 @@ export async function submitWeek(
 
 function cloneRows(
   source: Entry[],
-  opts: { profileId: string; periodId: string; userId: string; entryDate: DateStr },
+  opts: { profileId: string; periodId: string; userId: string; entryDate: DateStr; organizationId: string },
 ) {
   return source.map((e) => ({
     employee_profile_id: opts.profileId,
+    organization_id: opts.organizationId,
     timesheet_period_id: opts.periodId,
     entry_date: dateInput(opts.entryDate),
     project_id: e.project_id,
@@ -263,15 +275,15 @@ export async function copyPreviousDay(
   targetDate: DateStr,
 ): Promise<ActionResult<Entry[]>> {
   try {
-    const { user, profile } = await context();
+    const { user, profile, organizationId } = await context();
     const prevDate = toDateStr(addDays(fromDateStr(targetDate), -1));
 
     const prev = await prisma.time_entries.findMany({
-      where: { employee_profile_id: profile.id, entry_date: dateInput(prevDate) },
+      where: { employee_profile_id: profile.id, organization_id: organizationId, entry_date: dateInput(prevDate) },
     });
     if (prev.length === 0) return { ok: true, data: [] };
 
-    const period = await getOrCreatePeriod(profile, weekStart);
+    const period = await getOrCreatePeriod(profile, weekStart, organizationId);
     if (!isPeriodEditable(period.status)) throw new Error("This timesheet period is locked.");
 
     const inserted = await prisma.time_entries.createManyAndReturn({
@@ -280,6 +292,7 @@ export async function copyPreviousDay(
         periodId: period.id,
         userId: user.id,
         entryDate: targetDate,
+        organizationId,
       }),
     });
 
@@ -293,7 +306,7 @@ export async function copyPreviousDay(
 /** Copy last week's entries into the current week, matched by weekday. */
 export async function copyPreviousWeek(weekStart: DateStr): Promise<ActionResult<Entry[]>> {
   try {
-    const { user, profile } = await context();
+    const { user, profile, organizationId } = await context();
     const thisWeek = getWeekRange(weekStart);
     const prevWeek = getWeekRange(shiftWeek(weekStart, -1));
 
@@ -301,13 +314,14 @@ export async function copyPreviousWeek(weekStart: DateStr): Promise<ActionResult
       await prisma.time_entries.findMany({
         where: {
           employee_profile_id: profile.id,
+          organization_id: organizationId,
           entry_date: { gte: dateInput(prevWeek.start), lte: dateInput(prevWeek.end) },
         },
       })
     ).map(toEntryRow);
     if (prev.length === 0) return { ok: true, data: [] };
 
-    const period = await getOrCreatePeriod(profile, weekStart);
+    const period = await getOrCreatePeriod(profile, weekStart, organizationId);
     if (!isPeriodEditable(period.status)) throw new Error("This timesheet period is locked.");
 
     const rows = prev.map((e) => {
@@ -318,6 +332,7 @@ export async function copyPreviousWeek(weekStart: DateStr): Promise<ActionResult
         periodId: period.id,
         userId: user.id,
         entryDate,
+        organizationId,
       })[0];
     });
 

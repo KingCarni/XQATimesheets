@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireRole } from "@/lib/auth/session";
+import { requireWritableOrganizationAdmin } from "@/lib/tenant/context";
 import {
   generateTemporaryPassword,
   hashPassword,
 } from "@/lib/auth/password";
 import { getUserDeletionBlockers } from "@/lib/admin/deletion";
+import { provisionEmployee } from "@/lib/admin/provision";
 import { prisma } from "@/lib/prisma";
 
 export type ActionResult<T> =
@@ -17,6 +18,15 @@ export type ActionResult<T> =
 
 const roleSchema = z.enum(["employee", "manager", "admin"]);
 const assignmentRoleSchema = z.enum(["member", "lead", "manager"]);
+
+/** Ensure the target user is a member of this org before any admin mutation. */
+async function assertOrgMember(organizationId: string, userId: string) {
+  const membership = await prisma.organization_members.findUnique({
+    where: { organization_id_user_id: { organization_id: organizationId, user_id: userId } },
+    select: { id: true },
+  });
+  if (!membership) throw new Error("Employee not found in this organization.");
+}
 
 function readAssignments(formData: FormData) {
   return formData
@@ -55,7 +65,7 @@ export async function createEmployee(
   formData: FormData,
 ): Promise<ActionResult<CreateEmployeeResult>> {
   try {
-    await requireRole("admin");
+    const { organization } = await requireWritableOrganizationAdmin();
 
     const email = z
       .string()
@@ -86,59 +96,27 @@ export async function createEmployee(
 
     const assignments = readAssignments(formData);
 
-    const temporaryPassword = generateTemporaryPassword();
-    const passwordHash = await hashPassword(temporaryPassword);
-
-    await prisma.$transaction(async (tx) => {
-      const existing = await tx.users.findUnique({
-        where: { email },
-        select: { id: true },
-      });
-
-      if (existing) {
-        throw new Error("A user with that email already exists.");
-      }
-
-      const user = await tx.users.create({
-        data: {
-          email,
-          role,
-          is_active: true,
-          password_hash: passwordHash,
-        },
-      });
-
-      const profile = await tx.employee_profiles.create({
-        data: {
-          user_id: user.id,
-          full_name: fullName,
-          employee_code:
-            String(formData.get("employeeCode") ?? "").trim() || null,
-          department:
-            String(formData.get("department") ?? "").trim() || null,
-          timezone,
-          can_approve: role === "manager" || role === "admin",
-        },
-      });
-
-      if (assignments.length > 0) {
-        await tx.project_assignments.createMany({
-          data: assignments.map((assignment) => ({
-            employee_profile_id: profile.id,
-            ...assignment,
-          })),
-        });
-      }
-    });
+    const result = await prisma.$transaction((tx) =>
+      provisionEmployee(tx, {
+        organizationId: organization.id,
+        email,
+        fullName,
+        role,
+        employeeCode: String(formData.get("employeeCode") ?? "").trim() || null,
+        department: String(formData.get("department") ?? "").trim() || null,
+        timezone,
+        assignments,
+      }),
+    );
 
     revalidatePath("/admin");
 
     return {
       ok: true,
       data: {
-        email,
-        fullName,
-        temporaryPassword,
+        email: result.email,
+        fullName: result.fullName,
+        temporaryPassword: result.temporaryPassword,
       },
     };
   } catch (e) {
@@ -154,7 +132,7 @@ export async function updateEmployee(
   formData: FormData,
 ): Promise<ActionResult<{ updated: true }>> {
   try {
-    await requireRole("admin");
+    const { organization } = await requireWritableOrganizationAdmin();
 
     const userId = z
       .string()
@@ -167,21 +145,26 @@ export async function updateEmployee(
 
     const assignments = readAssignments(formData);
 
+    await assertOrgMember(organization.id, userId);
+
     await prisma.$transaction(async (tx) => {
-      const user = await tx.users.update({
-        where: { id: userId },
-        data: {
-          role,
-          is_active:
-            String(formData.get("isActive") ?? "") === "on",
-        },
-        include: {
-          employee_profile: true,
-        },
+      const isActive = String(formData.get("isActive") ?? "") === "on";
+
+      // Role/active for THIS organization live on the membership (authoritative);
+      // the global user.role is kept in sync during the single-org transition.
+      await tx.organization_members.update({
+        where: { organization_id_user_id: { organization_id: organization.id, user_id: userId } },
+        data: { role, is_active: isActive },
       });
 
-      if (!user.employee_profile) {
-        throw new Error("Employee profile not found.");
+      const user = await tx.users.update({
+        where: { id: userId },
+        data: { role, is_active: isActive },
+        include: { employee_profile: true },
+      });
+
+      if (!user.employee_profile || user.employee_profile.organization_id !== organization.id) {
+        throw new Error("Employee profile not found in this organization.");
       }
 
       await tx.employee_profiles.update({
@@ -214,13 +197,25 @@ export async function updateEmployee(
       await tx.project_assignments.updateMany({
         where: {
           employee_profile_id: user.employee_profile.id,
+          organization_id: organization.id,
         },
         data: {
           is_active: false,
         },
       });
 
+      // Only projects that belong to this organization may be assigned.
+      const validProjectIds = new Set(
+        (
+          await tx.projects.findMany({
+            where: { id: { in: assignments.map((a) => a.project_id) }, organization_id: organization.id },
+            select: { id: true },
+          })
+        ).map((p) => p.id),
+      );
+
       for (const assignment of assignments) {
+        if (!validProjectIds.has(assignment.project_id)) continue;
         await tx.project_assignments.upsert({
           where: {
             employee_profile_id_project_id: {
@@ -231,6 +226,7 @@ export async function updateEmployee(
           create: {
             employee_profile_id: user.employee_profile.id,
             project_id: assignment.project_id,
+            organization_id: organization.id,
             assignment_role: assignment.assignment_role,
             is_active: true,
           },
@@ -265,7 +261,7 @@ export async function deleteEmployee(
   formData: FormData,
 ): Promise<ActionResult<{ deleted: true }>> {
   try {
-    const admin = await requireRole("admin");
+    const { user: admin, organization } = await requireWritableOrganizationAdmin();
 
     const userId = z
       .string()
@@ -275,6 +271,8 @@ export async function deleteEmployee(
     if (userId === admin.id) {
       throw new Error("You cannot delete your own account.");
     }
+
+    await assertOrgMember(organization.id, userId);
 
     const target = await prisma.users.findUnique({
       where: { id: userId },
@@ -330,12 +328,14 @@ export async function resetEmployeePassword(
   formData: FormData,
 ): Promise<ActionResult<ResetPasswordResult>> {
   try {
-    await requireRole("admin");
+    const { organization } = await requireWritableOrganizationAdmin();
 
     const userId = z
       .string()
       .uuid()
       .parse(String(formData.get("userId") ?? ""));
+
+    await assertOrgMember(organization.id, userId);
 
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await hashPassword(temporaryPassword);

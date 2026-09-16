@@ -54,6 +54,7 @@ export function toEmployeeProfileRow(
     default_daily_hours: decimal(row.default_daily_hours),
     start_date: row.start_date ? dateOnly(row.start_date) : null,
     end_date: row.end_date ? dateOnly(row.end_date) : null,
+    avatar_updated_at: row.avatar_updated_at ? timestamp(row.avatar_updated_at) : null,
     created_at: timestamp(row.created_at),
     updated_at: timestamp(row.updated_at),
   };
@@ -142,6 +143,7 @@ function toTemplateRow(
 export async function getOrCreatePeriod(
   profile: Row<"employee_profiles">,
   weekStart: DateStr,
+  organizationId: string,
 ): Promise<Row<"timesheet_periods">> {
   const week = getWeekRange(weekStart);
 
@@ -157,6 +159,7 @@ export async function getOrCreatePeriod(
       week_start_date: dateInput(week.start),
       week_end_date: dateInput(week.end),
       expected_hours: 0,
+      organization_id: organizationId,
     },
     update: {},
   });
@@ -164,13 +167,15 @@ export async function getOrCreatePeriod(
   return toPeriodRow(period);
 }
 
-/** Active projects the employee is assigned to (falls back to all active). */
+/** Active projects (in this org) the employee is assigned to (falls back to all active in org). */
 async function loadProjects(
   profileId: string,
+  organizationId: string,
 ): Promise<Row<"projects">[]> {
   const assignments = await prisma.project_assignments.findMany({
     where: {
       employee_profile_id: profileId,
+      organization_id: organizationId,
       is_active: true,
     },
     select: {
@@ -184,6 +189,7 @@ async function loadProjects(
 
   const projects = await prisma.projects.findMany({
     where: {
+      organization_id: organizationId,
       is_active: true,
       ...(ids.length ? { id: { in: ids } } : {}),
     },
@@ -199,6 +205,7 @@ async function loadProjects(
 export async function getWeekData(
   profile: Row<"employee_profiles">,
   weekStart: DateStr,
+  organizationId: string,
 ): Promise<WeekData> {
   const week = getWeekRange(weekStart);
 
@@ -210,18 +217,18 @@ export async function getWeekData(
     activityTypes,
     templates,
   ] = await Promise.all([
-    prisma.timesheet_periods.findUnique({
+    prisma.timesheet_periods.findFirst({
       where: {
-        employee_profile_id_week_start_date: {
-          employee_profile_id: profile.id,
-          week_start_date: dateInput(week.start),
-        },
+        employee_profile_id: profile.id,
+        organization_id: organizationId,
+        week_start_date: dateInput(week.start),
       },
     }),
 
     prisma.time_entries.findMany({
       where: {
         employee_profile_id: profile.id,
+        organization_id: organizationId,
         entry_date: {
           gte: dateInput(week.start),
           lte: dateInput(week.end),
@@ -237,11 +244,12 @@ export async function getWeekData(
       ],
     }),
 
-    loadProjects(profile.id),
+    loadProjects(profile.id, organizationId),
 
     prisma.platforms.findMany({
       where: {
         is_active: true,
+        organization_id: organizationId,
       },
       orderBy: {
         sort_order: "asc",
@@ -251,6 +259,7 @@ export async function getWeekData(
     prisma.activity_types.findMany({
       where: {
         is_active: true,
+        organization_id: organizationId,
       },
       orderBy: {
         sort_order: "asc",
@@ -260,6 +269,7 @@ export async function getWeekData(
     prisma.entry_templates.findMany({
       where: {
         employee_profile_id: profile.id,
+        organization_id: organizationId,
         is_active: true,
       },
       orderBy: {

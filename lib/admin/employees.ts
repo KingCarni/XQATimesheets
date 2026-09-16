@@ -13,6 +13,7 @@ export type AdminEmployeeDto = {
   role: "employee" | "manager" | "admin";
   is_active: boolean;
   employee_profile: {
+    id: string;
     full_name: string;
     employee_code: string | null;
     department: string | null;
@@ -27,12 +28,14 @@ export type AdminEmployeeDto = {
   } | null;
 };
 
-export async function getAdminEmployeeData(): Promise<{
+export async function getAdminEmployeeData(organizationId: string): Promise<{
   users: AdminEmployeeDto[];
   projects: AdminProjectDto[];
 }> {
   const [rawUsers, rawProjects] = await Promise.all([
     prisma.users.findMany({
+      // Only members of THIS organization.
+      where: { organization_members: { some: { organization_id: organizationId } } },
       select: {
         id: true,
         email: true,
@@ -40,6 +43,7 @@ export async function getAdminEmployeeData(): Promise<{
         is_active: true,
         employee_profile: {
           select: {
+            id: true,
             full_name: true,
             employee_code: true,
             department: true,
@@ -47,6 +51,7 @@ export async function getAdminEmployeeData(): Promise<{
             project_assignments: {
               where: {
                 is_active: true,
+                organization_id: organizationId,
               },
               select: {
                 project_id: true,
@@ -72,6 +77,7 @@ export async function getAdminEmployeeData(): Promise<{
     prisma.projects.findMany({
       where: {
         is_active: true,
+        organization_id: organizationId,
       },
       select: {
         id: true,
@@ -90,6 +96,7 @@ export async function getAdminEmployeeData(): Promise<{
     is_active: user.is_active,
     employee_profile: user.employee_profile
       ? {
+          id: user.employee_profile.id,
           full_name: user.employee_profile.full_name,
           employee_code: user.employee_profile.employee_code,
           department: user.employee_profile.department,

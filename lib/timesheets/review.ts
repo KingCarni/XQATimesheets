@@ -9,19 +9,22 @@ import { dateInput, dateOnly, decimal, timestamp } from "./queries";
 export async function getApprovalQueue(
   viewer: CurrentUser,
   filters: { week?: DateStr; status?: string; employee?: string; project?: string },
+  organizationId: string,
 ) {
   const week = filters.week ? getWeekRange(filters.week) : null;
   const requestedStatus = filters.status || "submitted";
   const status = ["open", "submitted", "approved", "rejected", "locked", "all"].includes(requestedStatus)
     ? requestedStatus
     : "submitted";
-  const reviewableIds = await getReviewableProfileIds(viewer);
+  const reviewableIds = await getReviewableProfileIds(viewer, organizationId);
 
   return await prisma.timesheet_periods.findMany({
     where: {
+      organization_id: organizationId,
       ...(status === "all" ? {} : { status: status as "open" | "submitted" | "approved" | "rejected" | "locked" }),
       ...(week ? { week_start_date: dateInput(week.start) } : {}),
       employee_profile: {
+        organization_id: organizationId,
         ...(reviewableIds ? { id: { in: reviewableIds } } : {}),
         ...(filters.employee
           ? { full_name: { contains: filters.employee, mode: "insensitive" as const } }
@@ -29,7 +32,7 @@ export async function getApprovalQueue(
         ...(filters.project
           ? {
               project_assignments: {
-                some: { project_id: filters.project, is_active: true },
+                some: { project_id: filters.project, organization_id: organizationId, is_active: true },
               },
             }
           : {}),
@@ -39,7 +42,7 @@ export async function getApprovalQueue(
       employee_profile: {
         include: {
           project_assignments: {
-            where: { is_active: true },
+            where: { is_active: true, organization_id: organizationId },
             include: { project: true },
           },
         },
@@ -49,9 +52,9 @@ export async function getApprovalQueue(
   });
 }
 
-export async function getReviewDetail(viewer: CurrentUser, periodId: string) {
-  const period = await prisma.timesheet_periods.findUnique({
-    where: { id: periodId },
+export async function getReviewDetail(viewer: CurrentUser, periodId: string, organizationId: string) {
+  const period = await prisma.timesheet_periods.findFirst({
+    where: { id: periodId, organization_id: organizationId },
     include: {
       employee_profile: true,
       time_entries: {
@@ -66,23 +69,29 @@ export async function getReviewDetail(viewer: CurrentUser, periodId: string) {
   });
   if (!period) return null;
 
-  const canSee = viewer.role === "admin" || (await canReviewProfile(viewer, period.employee_profile_id));
+  const canSee =
+    viewer.role === "admin" || (await canReviewProfile(viewer, period.employee_profile_id, organizationId));
   if (!canSee) return null;
 
   return period;
 }
 
-export async function getProjectsForReviewFilters(viewer: CurrentUser) {
+export async function getProjectsForReviewFilters(viewer: CurrentUser, organizationId: string) {
   if (viewer.role === "admin") {
-    return prisma.projects.findMany({ where: { is_active: true }, orderBy: { name: "asc" } });
+    return prisma.projects.findMany({
+      where: { is_active: true, organization_id: organizationId },
+      orderBy: { name: "asc" },
+    });
   }
   if (!viewer.profile) return [];
   return prisma.projects.findMany({
     where: {
       is_active: true,
+      organization_id: organizationId,
       project_assignments: {
         some: {
           employee_profile_id: viewer.profile.id,
+          organization_id: organizationId,
           is_active: true,
           assignment_role: { in: ["lead", "manager"] },
         },

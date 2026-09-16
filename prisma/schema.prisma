@@ -41,6 +41,37 @@ enum pto_status {
   cancelled
 }
 
+enum contract_status {
+  upcoming
+  active
+  expired
+  terminated
+}
+
+enum equipment_status {
+  assigned
+  returned
+  retired
+}
+
+enum hardware_request_status {
+  requested
+  approved
+  rejected
+  fulfilled
+  cancelled
+}
+
+enum payroll_period {
+  weekly
+  biweekly
+}
+
+enum organization_domain_type {
+  subdomain
+  custom
+}
+
 enum audit_entity_type {
   user
   employee_profile
@@ -52,98 +83,164 @@ enum audit_entity_type {
   timesheet_period
   approval
   pto_request
+  employee_contract
+  contract_attachment
+  equipment_assignment
+  hardware_request
+  leave_entitlement
+  organization
+  organization_member
+  organization_branding
+  organization_domain
+  invitation
 }
 
 model users {
-  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email         String              @unique
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String   @unique
   password_hash String?
-  role          app_role            @default(employee)
-  is_active     Boolean             @default(true)
-  created_at    DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  role          app_role @default(employee)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  employee_profile employee_profiles?
-  managed_profiles employee_profiles[] @relation("profile_manager")
-  created_entries time_entries[] @relation("entry_created_by")
-  updated_entries time_entries[] @relation("entry_updated_by")
-  submitted_periods timesheet_periods[] @relation("period_submitted_by")
-  locked_periods timesheet_periods[] @relation("period_locked_by")
-  approvals approvals[]
-  audit_history audit_history[]
-  created_pto_requests pto_requests[] @relation("pto_created_by")
-  approved_pto_requests pto_requests[] @relation("pto_approved_by")
+  employee_profile              employee_profiles?
+  managed_profiles              employee_profiles[]     @relation("profile_manager")
+  created_entries               time_entries[]          @relation("entry_created_by")
+  updated_entries               time_entries[]          @relation("entry_updated_by")
+  submitted_periods             timesheet_periods[]     @relation("period_submitted_by")
+  locked_periods                timesheet_periods[]     @relation("period_locked_by")
+  approvals                     approvals[]
+  audit_history                 audit_history[]
+  created_pto_requests          pto_requests[]          @relation("pto_created_by")
+  approved_pto_requests         pto_requests[]          @relation("pto_approved_by")
+  created_contracts             employee_contracts[]    @relation("contract_created_by")
+  uploaded_contract_attachments contract_attachments[]  @relation("attachment_uploaded_by")
+  created_equipment_assignments equipment_assignments[] @relation("equipment_created_by")
+  created_hardware_requests     hardware_requests[]     @relation("hardware_created_by")
+  reviewed_hardware_requests    hardware_requests[]     @relation("hardware_reviewed_by")
+  created_leave_entitlements    leave_entitlements[]    @relation("entitlement_created_by")
+  organization_members          organization_members[]
+  created_invitations           invitations[]           @relation("invitation_created_by")
 }
 
 model employee_profiles {
-  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id             String                @unique @db.Uuid
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id             String    @unique @db.Uuid
   employee_code       String?
   full_name           String
-  manager_user_id     String?               @db.Uuid
-  default_daily_hours Decimal               @default(8.00) @db.Decimal(4, 2)
+  manager_user_id     String?   @db.Uuid
+  default_daily_hours Decimal   @default(8.00) @db.Decimal(4, 2)
   department          String?
-  timezone            String                @default("America/Vancouver")
-  start_date          DateTime?             @db.Date
-  end_date            DateTime?             @db.Date
-  can_approve         Boolean               @default(false)
-  created_at          DateTime              @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  timezone            String    @default("America/Vancouver")
+  start_date          DateTime? @db.Date
+  end_date            DateTime? @db.Date
+  can_approve         Boolean   @default(false)
+  // Employee-editable, directory-safe public profile fields.
+  nickname            String?
+  pronouns            String?
+  location            String?
+  linkedin_url        String?
+  // Set when an avatar exists; also used as a cache-buster for the avatar URL.
+  avatar_updated_at   DateTime? @db.Timestamptz(6)
+  // Tenant ownership. Nullable during the expand-phase migration; backfilled to
+  // the XQA organization, then made NOT NULL in the follow-up contract phase.
+  organization_id     String?   @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  manager users? @relation("profile_manager", fields: [manager_user_id], references: [id])
-  project_assignments project_assignments[]
-  entry_templates entry_templates[]
-  timesheet_periods timesheet_periods[]
-  time_entries time_entries[]
-  pto_requests pto_requests[]
-  pto_balances pto_balances[]
+  organization          organizations?          @relation(fields: [organization_id], references: [id])
+  user                  users                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  manager               users?                  @relation("profile_manager", fields: [manager_user_id], references: [id])
+  project_assignments   project_assignments[]
+  entry_templates       entry_templates[]
+  timesheet_periods     timesheet_periods[]
+  time_entries          time_entries[]
+  pto_requests          pto_requests[]
+  pto_balances          pto_balances[]
+  contracts             employee_contracts[]
+  equipment_assignments equipment_assignments[]
+  hardware_requests     hardware_requests[]
+  leave_entitlements    leave_entitlements[]
+  avatar                employee_avatars?
 
+  @@unique([id, organization_id])
   @@index([manager_user_id], map: "idx_employee_profiles_manager")
+  @@index([organization_id], map: "idx_employee_profiles_org")
+}
+
+model employee_avatars {
+  employee_profile_id String   @id @db.Uuid
+  mime_type           String
+  size_bytes          Int
+  image_bytes         Bytes
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
 }
 
 model projects {
-  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code              String?               @unique
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String?
   name              String
   client_name       String?
-  is_active         Boolean               @default(true)
-  requires_platform Boolean               @default(false)
+  is_active         Boolean  @default(true)
+  requires_platform Boolean  @default(false)
   color_token       String?
-  created_at        DateTime              @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  organization_id   String?  @db.Uuid
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  organization        organizations?        @relation(fields: [organization_id], references: [id])
   project_assignments project_assignments[]
-  entry_templates entry_templates[]
-  time_entries time_entries[]
+  entry_templates     entry_templates[]
+  time_entries        time_entries[]
+
+  // Project code/name are unique WITHIN an organization, not globally, so two
+  // tenants can both have a "PVVK" or "Internal" project.
+  @@unique([id, organization_id])
+  @@unique([organization_id, code])
+  @@unique([organization_id, name])
+  @@index([organization_id], map: "idx_projects_org")
 }
 
 model platforms {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name       String    @unique
-  is_active  Boolean   @default(true)
-  sort_order Int       @default(0)
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  is_active       Boolean  @default(true)
+  sort_order      Int      @default(0)
+  organization_id String?  @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  organization    organizations?    @relation(fields: [organization_id], references: [id])
   entry_templates entry_templates[]
-  time_entries time_entries[]
+  time_entries    time_entries[]
+
+  @@unique([organization_id, name])
+  @@index([organization_id], map: "idx_platforms_org")
 }
 
 model activity_types {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String    @unique
-  category    String?
-  is_billable Boolean   @default(false)
-  is_pto      Boolean   @default(false)
-  is_active   Boolean   @default(true)
-  sort_order  Int       @default(0)
-  created_at  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  category        String?
+  is_billable     Boolean  @default(false)
+  is_pto          Boolean  @default(false)
+  is_active       Boolean  @default(true)
+  sort_order      Int      @default(0)
+  organization_id String?  @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  entry_templates entry_templates[]
-  time_entries time_entries[]
-  pto_requests pto_requests[]
+  organization       organizations?       @relation(fields: [organization_id], references: [id])
+  entry_templates    entry_templates[]
+  time_entries       time_entries[]
+  pto_requests       pto_requests[]
+  leave_entitlements leave_entitlements[]
+
+  @@unique([organization_id, name])
+  @@index([organization_id], map: "idx_activity_types_org")
 }
 
 model project_assignments {
@@ -154,35 +251,41 @@ model project_assignments {
   starts_on           DateTime?       @db.Date
   ends_on             DateTime?       @db.Date
   is_active           Boolean         @default(true)
+  organization_id     String?         @db.Uuid
   created_at          DateTime        @default(now()) @db.Timestamptz(6)
   updated_at          DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
 
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
   employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
-  project projects @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  project          projects          @relation(fields: [project_id], references: [id], onDelete: Cascade)
 
   @@unique([employee_profile_id, project_id])
   @@index([project_id], map: "idx_assignments_project")
+  @@index([organization_id], map: "idx_assignments_org")
 }
 
 model entry_templates {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  employee_profile_id String    @db.Uuid
-  project_id          String?   @db.Uuid
-  platform_id         String?   @db.Uuid
-  activity_type_id    String    @db.Uuid
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_profile_id String   @db.Uuid
+  project_id          String?  @db.Uuid
+  platform_id         String?  @db.Uuid
+  activity_type_id    String   @db.Uuid
   description         String?
   label               String
-  sort_order          Int       @default(0)
-  is_active           Boolean   @default(true)
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  sort_order          Int      @default(0)
+  is_active           Boolean  @default(true)
+  organization_id     String?  @db.Uuid
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
   employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
-  project projects? @relation(fields: [project_id], references: [id])
-  platform platforms? @relation(fields: [platform_id], references: [id])
-  activity_type activity_types @relation(fields: [activity_type_id], references: [id])
+  project          projects?         @relation(fields: [project_id], references: [id])
+  platform         platforms?        @relation(fields: [platform_id], references: [id])
+  activity_type    activity_types    @relation(fields: [activity_type_id], references: [id])
 
   @@index([employee_profile_id], map: "idx_templates_employee")
+  @@index([organization_id], map: "idx_templates_org")
 }
 
 model timesheet_periods {
@@ -198,45 +301,51 @@ model timesheet_periods {
   locked_at           DateTime?        @db.Timestamptz(6)
   locked_by           String?          @db.Uuid
   rejection_reason    String?
+  organization_id     String?          @db.Uuid
   created_at          DateTime         @default(now()) @db.Timestamptz(6)
   updated_at          DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
 
-  employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
-  submitted_by_user users? @relation("period_submitted_by", fields: [submitted_by], references: [id])
-  locked_by_user users? @relation("period_locked_by", fields: [locked_by], references: [id])
-  time_entries time_entries[]
-  approvals approvals[]
+  organization      organizations?    @relation(fields: [organization_id], references: [id])
+  employee_profile  employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
+  submitted_by_user users?            @relation("period_submitted_by", fields: [submitted_by], references: [id])
+  locked_by_user    users?            @relation("period_locked_by", fields: [locked_by], references: [id])
+  time_entries      time_entries[]
+  approvals         approvals[]
 
   @@unique([employee_profile_id, week_start_date])
+  @@index([organization_id], map: "idx_periods_org")
 }
 
 model time_entries {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  employee_profile_id String    @db.Uuid
-  timesheet_period_id String    @db.Uuid
-  entry_date          DateTime  @db.Date
-  project_id          String?   @db.Uuid
-  platform_id         String?   @db.Uuid
-  activity_type_id    String    @db.Uuid
-  hours               Decimal   @db.Decimal(4, 2)
-  description         String    @default("")
-  source              String    @default("manual")
-  created_by          String    @db.Uuid
-  updated_by          String    @db.Uuid
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_profile_id String   @db.Uuid
+  timesheet_period_id String   @db.Uuid
+  entry_date          DateTime @db.Date
+  project_id          String?  @db.Uuid
+  platform_id         String?  @db.Uuid
+  activity_type_id    String   @db.Uuid
+  hours               Decimal  @db.Decimal(4, 2)
+  description         String   @default("")
+  source              String   @default("manual")
+  created_by          String   @db.Uuid
+  updated_by          String   @db.Uuid
+  organization_id     String?  @db.Uuid
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
   employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
   timesheet_period timesheet_periods @relation(fields: [timesheet_period_id], references: [id], onDelete: Cascade)
-  project projects? @relation(fields: [project_id], references: [id])
-  platform platforms? @relation(fields: [platform_id], references: [id])
-  activity_type activity_types @relation(fields: [activity_type_id], references: [id])
-  created_by_user users @relation("entry_created_by", fields: [created_by], references: [id])
-  updated_by_user users @relation("entry_updated_by", fields: [updated_by], references: [id])
+  project          projects?         @relation(fields: [project_id], references: [id])
+  platform         platforms?        @relation(fields: [platform_id], references: [id])
+  activity_type    activity_types    @relation(fields: [activity_type_id], references: [id])
+  created_by_user  users             @relation("entry_created_by", fields: [created_by], references: [id])
+  updated_by_user  users             @relation("entry_updated_by", fields: [updated_by], references: [id])
 
   @@index([employee_profile_id, entry_date], map: "idx_time_entries_employee_date")
   @@index([project_id, entry_date], map: "idx_time_entries_project_date")
   @@index([timesheet_period_id], map: "idx_time_entries_period")
+  @@index([organization_id, entry_date], map: "idx_time_entries_org_date")
 }
 
 model approvals {
@@ -245,28 +354,34 @@ model approvals {
   actor_user_id       String          @db.Uuid
   action              approval_action
   comment             String?
+  organization_id     String?         @db.Uuid
   created_at          DateTime        @default(now()) @db.Timestamptz(6)
 
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
   timesheet_period timesheet_periods @relation(fields: [timesheet_period_id], references: [id], onDelete: Cascade)
-  actor users @relation(fields: [actor_user_id], references: [id])
+  actor            users             @relation(fields: [actor_user_id], references: [id])
 
   @@index([timesheet_period_id, created_at], map: "idx_approvals_period")
+  @@index([organization_id], map: "idx_approvals_org")
 }
 
 model audit_history {
-  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  entity_type   audit_entity_type
-  entity_id     String            @db.Uuid
-  action        String
-  actor_user_id String?           @db.Uuid
-  occurred_at   DateTime          @default(now()) @db.Timestamptz(6)
-  before_state  Json?
-  after_state   Json?
-  metadata      Json              @default("{}")
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entity_type     audit_entity_type
+  entity_id       String            @db.Uuid
+  action          String
+  actor_user_id   String?           @db.Uuid
+  occurred_at     DateTime          @default(now()) @db.Timestamptz(6)
+  before_state    Json?
+  after_state     Json?
+  metadata        Json              @default("{}")
+  organization_id String?           @db.Uuid
 
-  actor users? @relation(fields: [actor_user_id], references: [id])
+  actor        users?         @relation(fields: [actor_user_id], references: [id])
+  organization organizations? @relation(fields: [organization_id], references: [id])
 
   @@index([entity_type, entity_id, occurred_at], map: "idx_audit_entity")
+  @@index([organization_id, occurred_at], map: "idx_audit_org")
 }
 
 model pto_requests {
@@ -282,15 +397,18 @@ model pto_requests {
   approved_by         String?    @db.Uuid
   approved_at         DateTime?  @db.Timestamptz(6)
   created_by          String     @db.Uuid
+  organization_id     String?    @db.Uuid
   created_at          DateTime   @default(now()) @db.Timestamptz(6)
   updated_at          DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
 
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
   employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
-  activity_type activity_types @relation(fields: [activity_type_id], references: [id])
-  approver users? @relation("pto_approved_by", fields: [approved_by], references: [id])
-  creator users @relation("pto_created_by", fields: [created_by], references: [id])
+  activity_type    activity_types    @relation(fields: [activity_type_id], references: [id])
+  approver         users?            @relation("pto_approved_by", fields: [approved_by], references: [id])
+  creator          users             @relation("pto_created_by", fields: [created_by], references: [id])
 
   @@index([employee_profile_id, start_date], map: "idx_pto_requests_employee")
+  @@index([organization_id], map: "idx_pto_requests_org")
 }
 
 model pto_balances {
@@ -299,9 +417,223 @@ model pto_balances {
   pto_type            String
   balance_hours       Decimal  @default(0) @db.Decimal(6, 2)
   effective_date      DateTime @db.Date
+  organization_id     String?  @db.Uuid
   created_at          DateTime @default(now()) @db.Timestamptz(6)
 
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
   employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
 
   @@unique([employee_profile_id, pto_type, effective_date])
+  @@index([organization_id], map: "idx_pto_balances_org")
+}
+
+model employee_contracts {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_profile_id String          @db.Uuid
+  title               String
+  contract_type       String?
+  start_date          DateTime        @db.Date
+  end_date            DateTime?       @db.Date
+  status              contract_status @default(active)
+  notes               String?
+  created_by          String?         @db.Uuid
+  organization_id     String?         @db.Uuid
+  created_at          DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  organization     organizations?         @relation(fields: [organization_id], references: [id])
+  employee_profile employee_profiles      @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
+  created_by_user  users?                 @relation("contract_created_by", fields: [created_by], references: [id])
+  attachments      contract_attachments[]
+
+  @@index([employee_profile_id, start_date], map: "idx_contracts_employee")
+  @@index([organization_id], map: "idx_contracts_org")
+}
+
+model contract_attachments {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contract_id         String   @db.Uuid
+  original_filename   String
+  mime_type           String
+  size_bytes          Int
+  file_bytes          Bytes
+  uploaded_at         DateTime @default(now()) @db.Timestamptz(6)
+  uploaded_by_user_id String?  @db.Uuid
+  organization_id     String?  @db.Uuid
+
+  organization     organizations?     @relation(fields: [organization_id], references: [id])
+  contract         employee_contracts @relation(fields: [contract_id], references: [id], onDelete: Cascade)
+  uploaded_by_user users?             @relation("attachment_uploaded_by", fields: [uploaded_by_user_id], references: [id])
+
+  @@index([contract_id, uploaded_at], map: "idx_contract_attachments_contract")
+  @@index([organization_id], map: "idx_contract_attachments_org")
+}
+
+model equipment_assignments {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_profile_id String           @db.Uuid
+  name                String
+  asset_tag           String?
+  status              equipment_status @default(assigned)
+  issued_on           DateTime?        @db.Date
+  returned_on         DateTime?        @db.Date
+  notes               String?
+  created_by          String?          @db.Uuid
+  organization_id     String?          @db.Uuid
+  created_at          DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
+  employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
+  created_by_user  users?            @relation("equipment_created_by", fields: [created_by], references: [id])
+
+  @@index([employee_profile_id, status], map: "idx_equipment_employee")
+  @@index([organization_id], map: "idx_equipment_org")
+}
+
+model hardware_requests {
+  id                  String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_profile_id String                  @db.Uuid
+  details             String
+  category            String?
+  status              hardware_request_status @default(requested)
+  review_note         String?
+  reviewed_by         String?                 @db.Uuid
+  reviewed_at         DateTime?               @db.Timestamptz(6)
+  created_by          String                  @db.Uuid
+  organization_id     String?                 @db.Uuid
+  created_at          DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
+  employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
+  reviewer         users?            @relation("hardware_reviewed_by", fields: [reviewed_by], references: [id])
+  creator          users             @relation("hardware_created_by", fields: [created_by], references: [id])
+
+  @@index([employee_profile_id, created_at], map: "idx_hardware_requests_employee")
+  @@index([status, created_at], map: "idx_hardware_requests_status")
+  @@index([organization_id], map: "idx_hardware_requests_org")
+}
+
+model leave_entitlements {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employee_profile_id String   @db.Uuid
+  activity_type_id    String   @db.Uuid
+  hours               Decimal  @default(0) @db.Decimal(6, 2)
+  note                String?
+  created_by          String?  @db.Uuid
+  organization_id     String?  @db.Uuid
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  organization     organizations?    @relation(fields: [organization_id], references: [id])
+  employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
+  activity_type    activity_types    @relation(fields: [activity_type_id], references: [id])
+  created_by_user  users?            @relation("entitlement_created_by", fields: [created_by], references: [id])
+
+  @@unique([employee_profile_id, activity_type_id])
+  @@index([organization_id], map: "idx_leave_entitlements_org")
+}
+
+// ---------------------------------------------------------------------------
+// Multi-tenant / SaaS models (HourOps platform)
+// ---------------------------------------------------------------------------
+
+model organizations {
+  id                      String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                    String
+  slug                    String          @unique
+  timezone                String          @default("America/Vancouver")
+  week_start              Int             @default(1) // date-fns convention: 1 = Monday, 0 = Sunday
+  payroll_period          payroll_period?
+  is_demo                 Boolean         @default(false)
+  onboarding_step         String          @default("company")
+  onboarding_completed_at DateTime?       @db.Timestamptz(6)
+  created_at              DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  members     organization_members[]
+  branding    organization_branding?
+  domains     organization_domains[]
+  invitations invitations[]
+
+  employee_profiles     employee_profiles[]
+  projects              projects[]
+  platforms             platforms[]
+  activity_types        activity_types[]
+  project_assignments   project_assignments[]
+  entry_templates       entry_templates[]
+  timesheet_periods     timesheet_periods[]
+  time_entries          time_entries[]
+  approvals             approvals[]
+  audit_history         audit_history[]
+  pto_requests          pto_requests[]
+  pto_balances          pto_balances[]
+  employee_contracts    employee_contracts[]
+  contract_attachments  contract_attachments[]
+  equipment_assignments equipment_assignments[]
+  hardware_requests     hardware_requests[]
+  leave_entitlements    leave_entitlements[]
+}
+
+model organization_members {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String   @db.Uuid
+  user_id         String   @db.Uuid
+  role            app_role @default(employee)
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  organization organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  user         users         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, user_id])
+  @@index([user_id], map: "idx_org_members_user")
+}
+
+model organization_branding {
+  organization_id String    @id @db.Uuid
+  primary_color   String?
+  accent_color    String?
+  logo_mime       String?
+  logo_bytes      Bytes?
+  logo_updated_at DateTime? @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  organization organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+}
+
+model organization_domains {
+  id              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String                   @db.Uuid
+  hostname        String                   @unique
+  type            organization_domain_type @default(subdomain)
+  verified        Boolean                  @default(false)
+  is_primary      Boolean                  @default(false)
+  created_at      DateTime                 @default(now()) @db.Timestamptz(6)
+  verified_at     DateTime?                @db.Timestamptz(6)
+
+  organization organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id], map: "idx_org_domains_org")
+}
+
+model invitations {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id     String    @db.Uuid
+  email               String
+  role                app_role  @default(employee)
+  employee_profile_id String?   @db.Uuid
+  token_hash          String    @unique
+  expires_at          DateTime  @db.Timestamptz(6)
+  accepted_at         DateTime? @db.Timestamptz(6)
+  created_by          String?   @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+
+  organization    organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  created_by_user users?        @relation("invitation_created_by", fields: [created_by], references: [id])
+
+  @@index([organization_id], map: "idx_invitations_org")
+  @@index([email], map: "idx_invitations_email")
 }

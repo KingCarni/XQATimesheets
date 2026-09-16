@@ -34,7 +34,14 @@ export function AddEntryForm({
   onAdded: (e: Entry) => void;
 }) {
   const firstActivity = catalogs.activityTypes[0]?.id ?? "";
-  const [projectId, setProjectId] = useState(initial?.projectId ?? "");
+  // Project defaulting: when the employee has exactly one active project it is
+  // preselected so they don't have to pick it every time. With several
+  // projects we leave it unset so they choose deliberately. A template prefill
+  // always wins. The employee can still switch to any project they're
+  // authorized to use (the server re-checks authorization on save).
+  const defaultProjectId =
+    initial?.projectId ?? (catalogs.projects.length === 1 ? catalogs.projects[0].id : "");
+  const [projectId, setProjectId] = useState(defaultProjectId);
   const [platformId, setPlatformId] = useState(initial?.platformId ?? "");
   const [activityId, setActivityId] = useState(initial?.activityId ?? firstActivity);
   const [hours, setHours] = useState("");
@@ -49,7 +56,7 @@ export function AddEntryForm({
     setHours("");
     setDescription("");
     if (!keepContext) {
-      setProjectId("");
+      setProjectId(defaultProjectId);
       setPlatformId("");
       setActivityId(firstActivity);
     }

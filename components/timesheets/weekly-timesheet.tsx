@@ -2,13 +2,17 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
   Clock3,
   Copy,
   Lock,
+  Send,
+  XCircle,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -94,6 +98,7 @@ export function WeeklyTimesheet({
 
   const [copyPending, startCopy] = useTransition();
   const [submitPending, startSubmit] = useTransition();
+  const router = useRouter();
 
   const initialSelected = useMemo(() => {
     const today = todayStr();
@@ -258,7 +263,10 @@ export function WeeklyTimesheet({
 
       if (result.ok) {
         setConfirmSubmit(false);
-        setValidation(result.data);
+        setValidation(null);
+        // Re-fetch so the server-rendered submitted banner + locked state
+        // appear immediately (periodStatus/editable come from the server).
+        router.refresh();
       } else {
         setSubmitError(result.error);
       }
@@ -268,6 +276,15 @@ export function WeeklyTimesheet({
   const visibleDays = week.days.filter(
     (day) => showWeekend || !isWeekend(day),
   );
+
+  const projectNames = useMemo(() => {
+    const byId = new Map(catalogs.projects.map((p) => [p.id, p.name]));
+    const set = new Set<string>();
+    for (const entry of entries) {
+      if (entry.project_id) set.add(byId.get(entry.project_id) ?? "Unknown");
+    }
+    return [...set];
+  }, [entries, catalogs.projects]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5">
@@ -340,26 +357,10 @@ export function WeeklyTimesheet({
         />
       </div>
 
+      <PeriodBanner status={periodStatus} submittedAt={submittedAt} rejectionReason={rejectionReason} />
+
       <div className="border-border bg-card rounded-2xl border shadow-[var(--shadow-soft)]">
-        {periodStatus === "submitted" ? (
-          <div className="border-b border-border bg-xqa-sky-soft px-4 py-3 text-sm text-xqa-blue sm:px-5">
-            Awaiting manager review
-            {submittedAt
-              ? ` - submitted ${new Date(
-                  submittedAt,
-                ).toLocaleString()}`
-              : ""}
-          </div>
-        ) : null}
-
-        {periodStatus === "rejected" &&
-        rejectionReason ? (
-          <div className="border-b border-xqa-pink/20 bg-xqa-pink/8 px-4 py-3 text-sm text-destructive sm:px-5">
-            Corrections required: {rejectionReason}
-          </div>
-        ) : null}
-
-        {validation ? (
+        {validation && !confirmSubmit ? (
           <div className="border-b border-border px-4 py-3 text-sm sm:px-5">
             <p className="font-semibold">
               Submission check:{" "}
@@ -387,30 +388,6 @@ export function WeeklyTimesheet({
                   </li>
                 ))}
               </ul>
-            ) : null}
-
-            {confirmSubmit ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={submitPending}
-                  onClick={runSubmitWeek}
-                >
-                  Confirm Submit
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setConfirmSubmit(false)
-                  }
-                >
-                  Cancel
-                </Button>
-              </div>
             ) : null}
           </div>
         ) : null}
@@ -443,14 +420,6 @@ export function WeeklyTimesheet({
             ) : null}
           </div>
         </div>
-
-        {!editable ? (
-          <div className="mx-4 mt-4 flex items-center gap-2 rounded-xl border border-xqa-pink/20 bg-xqa-pink/8 p-3 text-sm text-destructive sm:mx-5">
-            <Lock className="h-4 w-4" />
-            This week is {periodStatus} and can no
-            longer be edited.
-          </div>
-        ) : null}
 
         <div className="flex flex-wrap items-stretch gap-2 px-4 py-4 sm:px-5">
           {visibleDays.map((day) => {
@@ -591,6 +560,158 @@ export function WeeklyTimesheet({
               />
             </>
           ) : null}
+        </div>
+      </div>
+
+      {confirmSubmit ? (
+        <SubmitConfirmModal
+          weekLabel={weekRangeLabel(week)}
+          totalHours={fmt(weekTotal)}
+          entryCount={entries.length}
+          projects={projectNames}
+          pending={submitPending}
+          onCancel={() => setConfirmSubmit(false)}
+          onConfirm={runSubmitWeek}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PeriodBanner({
+  status,
+  submittedAt,
+  rejectionReason,
+}: {
+  status: TimesheetStatus | null;
+  submittedAt?: string | null;
+  rejectionReason?: string | null;
+}) {
+  if (status === "submitted") {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border-2 border-warning bg-warning/15 px-5 py-4 shadow-[var(--shadow-soft)]">
+        <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-warning" />
+        <div>
+          <p className="text-base font-bold tracking-tight text-foreground">Week submitted</p>
+          <p className="text-sm text-foreground/80">
+            Awaiting manager review — this timesheet is locked and can no longer be edited unless a reviewer rejects it.
+          </p>
+          {submittedAt ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Submitted {new Date(submittedAt).toLocaleString()}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "approved" || status === "locked") {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border-2 border-success bg-success/15 px-5 py-4 shadow-[var(--shadow-soft)]">
+        <Lock className="mt-0.5 h-6 w-6 shrink-0 text-success" />
+        <div>
+          <p className="text-base font-bold tracking-tight text-foreground">
+            Week {status === "approved" ? "approved" : "locked"}
+          </p>
+          <p className="text-sm text-foreground/80">This timesheet is finalized and read-only.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "rejected") {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border-2 border-destructive bg-destructive/10 px-5 py-4 shadow-[var(--shadow-soft)]">
+        <XCircle className="mt-0.5 h-6 w-6 shrink-0 text-destructive" />
+        <div>
+          <p className="text-base font-bold tracking-tight text-foreground">Changes requested</p>
+          <p className="text-sm text-foreground/80">
+            A reviewer returned this week. Make the corrections below and submit it again.
+          </p>
+          {rejectionReason ? (
+            <p className="mt-1 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-1.5 text-sm font-medium text-destructive">
+              Reason: {rejectionReason}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function SubmitConfirmModal({
+  weekLabel,
+  totalHours,
+  entryCount,
+  projects,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  weekLabel: string;
+  totalHours: string;
+  entryCount: number;
+  projects: string[];
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="submit-week-title"
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border-2 border-warning bg-card shadow-2xl">
+        <div className="flex items-center gap-3 border-b-2 border-warning bg-warning/20 px-5 py-4">
+          <AlertTriangle className="h-6 w-6 shrink-0 text-warning" />
+          <h2 id="submit-week-title" className="text-lg font-bold tracking-tight">
+            Submit this week?
+          </h2>
+        </div>
+
+        <div className="grid gap-3 px-5 py-4">
+          <p className="text-sm text-foreground/80">
+            Once submitted, this timesheet can <strong>no longer be edited</strong> unless it is rejected by a reviewer.
+          </p>
+
+          <dl className="grid gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Week</dt>
+              <dd className="text-right font-semibold">{weekLabel}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Total hours</dt>
+              <dd className="font-semibold">{totalHours}h</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Entries</dt>
+              <dd className="font-semibold">{entryCount}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Projects</dt>
+              <dd className="text-right font-semibold">{projects.length > 0 ? projects.join(", ") : "None"}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-warning px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+          >
+            <Send className="h-4 w-4" />
+            {pending ? "Submitting…" : "Confirm Submission"}
+          </button>
         </div>
       </div>
     </div>

@@ -10,6 +10,42 @@ const credentialsSchema = z.object({
   password: z.string().min(1),
 });
 
+/**
+ * Cross-subdomain session cookies for the tenant model.
+ *
+ * Tenancy is host-based (`hourops.ca`, `xqa.hourops.ca`, `<slug>.hourops.ca`),
+ * so a session created on one host must be readable on the others. That only
+ * works if the session cookie's `Domain` is the shared parent (e.g.
+ * `.hourops.ca`). This is configured ENTIRELY through `AUTH_COOKIE_DOMAIN`:
+ *   - unset (local dev, `localhost`, preview): omit the cookie overrides
+ *     completely, so Auth.js uses its default host-only cookies — dev is never
+ *     affected, and `<slug>.localhost` is tested per-host.
+ *   - set to `.hourops.ca` in production: the session, callback, and CSRF
+ *     cookies are shared across every tenant subdomain.
+ *
+ * Note the CSRF cookie uses the `__Secure-` prefix (not `__Host-`) because
+ * `__Host-` forbids a `Domain` attribute, which we require here. All three are
+ * `Secure` + `SameSite=Lax`, which is correct for top-level cross-subdomain
+ * navigation over HTTPS.
+ */
+const cookieDomain = process.env.AUTH_COOKIE_DOMAIN;
+const crossSubdomainCookies = cookieDomain
+  ? {
+      sessionToken: {
+        name: "__Secure-authjs.session-token",
+        options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true, domain: cookieDomain },
+      },
+      callbackUrl: {
+        name: "__Secure-authjs.callback-url",
+        options: { sameSite: "lax" as const, path: "/", secure: true, domain: cookieDomain },
+      },
+      csrfToken: {
+        name: "__Secure-authjs.csrf-token",
+        options: { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true, domain: cookieDomain },
+      },
+    }
+  : undefined;
+
 export const authConfig = {
   pages: {
     signIn: "/login",
@@ -17,17 +53,23 @@ export const authConfig = {
   session: {
     strategy: "jwt",
   },
+  // Required when the app is served from multiple hosts/subdomains.
+  trustHost: true,
+  ...(crossSubdomainCookies ? { cookies: crossSubdomainCookies } : {}),
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = Boolean(auth?.user);
-      const isOnLogin = nextUrl.pathname === "/login";
-      const isProtected = nextUrl.pathname !== "/login";
+      // Public routes reachable without a session: the marketing landing page,
+      // sign-in, company creation, the invitation acceptance flow (where the
+      // account is created), and public org branding (logos on those pages).
+      const publicPaths = ["/", "/login", "/signup", "/accept-invite", "/api/org-logo"];
+      const isPublic = publicPaths.includes(nextUrl.pathname);
 
-      if (isOnLogin && isLoggedIn) {
+      if (isLoggedIn && (nextUrl.pathname === "/login" || nextUrl.pathname === "/signup")) {
         return Response.redirect(new URL("/my-timesheet", nextUrl));
       }
 
-      if (isProtected) return isLoggedIn;
+      if (!isPublic) return isLoggedIn;
       return true;
     },
     jwt({ token, user }) {

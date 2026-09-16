@@ -1,11 +1,21 @@
-import { requireRole } from "@/lib/auth/session";
+import { requireOrganizationAdmin } from "@/lib/tenant/context";
 import { getAdminEmployeeData } from "@/lib/admin/employees";
+import { getAdminWorkforceData } from "@/lib/admin/workforce";
+import { listPendingInvitations } from "@/lib/invitations/queries";
 import { CreateEmployeeForm } from "@/components/admin/create-employee-form";
+import { EmployeeImport } from "@/components/admin/employee-import";
+import { InvitePanel } from "@/components/admin/invite-panel";
 import { EmployeeCard } from "@/components/admin/employee-card";
 
 export default async function AdminPage() {
-  await requireRole("admin");
-  const { users, projects } = await getAdminEmployeeData();
+  const { organization } = await requireOrganizationAdmin();
+  const { users, projects } = await getAdminEmployeeData(organization.id);
+  const pendingInvitations = await listPendingInvitations(organization.id);
+
+  const profileIds = users
+    .map((u) => u.employee_profile?.id)
+    .filter((id): id is string => Boolean(id));
+  const workforce = await getAdminWorkforceData(profileIds, organization.id);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5">
@@ -18,9 +28,19 @@ export default async function AdminPage() {
 
       <CreateEmployeeForm projects={projects} />
 
+      <InvitePanel pending={pendingInvitations} />
+
+      <EmployeeImport />
+
       <section className="grid gap-4">
         {users.map((user) => (
-          <EmployeeCard key={user.id} user={user} projects={projects} />
+          <EmployeeCard
+            key={user.id}
+            user={user}
+            projects={projects}
+            workforce={user.employee_profile ? workforce.byProfile[user.employee_profile.id] ?? null : null}
+            ptoTypes={workforce.ptoTypes}
+          />
         ))}
       </section>
     </div>

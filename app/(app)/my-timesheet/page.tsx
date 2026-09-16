@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth/session";
+import { requireOrganizationContext } from "@/lib/tenant/context";
 import { getWeekData } from "@/lib/timesheets/queries";
 import { getWeekRange, todayStr } from "@/lib/timesheets/week";
 import { isPeriodEditable } from "@/types/domain";
@@ -17,7 +17,7 @@ export default async function MyTimesheetPage({
 }: {
   searchParams: Promise<{ week?: string }>;
 }) {
-  const user = await requireUser();
+  const { user, organization } = await requireOrganizationContext();
   const { week: weekParam } = await searchParams;
 
   if (!user.profile) {
@@ -45,7 +45,7 @@ export default async function MyTimesheetPage({
 
   const weekStart = getWeekRange(seed).start;
 
-  const data = await getWeekData(user.profile, weekStart);
+  const data = await getWeekData(user.profile, weekStart, organization.id);
 
   const editable = data.period
     ? isPeriodEditable(data.period.status)

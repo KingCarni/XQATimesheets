@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireUser } from "@/lib/auth/session";
+import { requireWritableOrganizationContext } from "@/lib/tenant/context";
 import { prisma } from "@/lib/prisma";
 import { canReviewPtoRequest } from "@/lib/pto/queries";
 
@@ -26,8 +26,12 @@ function businessDaysInclusive(start: Date, end: Date) {
 }
 
 export async function createPtoRequest(formData: FormData) {
-  const user = await requireUser();
+  const { user, organization } = await requireWritableOrganizationContext();
   if (!user.profile) throw new Error("An employee profile is required to request time off.");
+  if (user.profile.organization_id && user.profile.organization_id !== organization.id) {
+    throw new Error("Your profile does not belong to this organization.");
+  }
+  const organizationId = organization.id;
 
   const activityTypeId = String(formData.get("activityTypeId") ?? "").trim();
   const startDate = parseDate(formData.get("startDate"), "Start date");
@@ -42,7 +46,7 @@ export async function createPtoRequest(formData: FormData) {
   }
 
   const activityType = await prisma.activity_types.findFirst({
-    where: { id: activityTypeId, is_active: true, is_pto: true },
+    where: { id: activityTypeId, is_active: true, is_pto: true, organization_id: organizationId },
     select: { id: true },
   });
   if (!activityType) throw new Error("Invalid time-off type.");
@@ -53,6 +57,7 @@ export async function createPtoRequest(formData: FormData) {
   const overlap = await prisma.pto_requests.findFirst({
     where: {
       employee_profile_id: user.profile.id,
+      organization_id: organizationId,
       status: { in: ["requested", "approved"] },
       start_date: { lte: endDate },
       end_date: { gte: startDate },
@@ -65,6 +70,7 @@ export async function createPtoRequest(formData: FormData) {
     const request = await tx.pto_requests.create({
       data: {
         employee_profile_id: user.profile!.id,
+        organization_id: organizationId,
         activity_type_id: activityTypeId,
         start_date: startDate,
         end_date: endDate,
@@ -82,6 +88,7 @@ export async function createPtoRequest(formData: FormData) {
         entity_id: request.id,
         action: "request",
         actor_user_id: user.id,
+        organization_id: organizationId,
         after_state: {
           status: request.status,
           start_date: request.start_date.toISOString(),
@@ -99,8 +106,9 @@ export async function createPtoRequest(formData: FormData) {
 }
 
 export async function cancelPtoRequest(formData: FormData) {
-  const user = await requireUser();
+  const { user, organization } = await requireWritableOrganizationContext();
   if (!user.profile) throw new Error("Employee profile required.");
+  const organizationId = organization.id;
 
   const requestId = String(formData.get("requestId") ?? "").trim();
   if (!requestId) throw new Error("Request is required.");
@@ -110,6 +118,7 @@ export async function cancelPtoRequest(formData: FormData) {
       where: {
         id: requestId,
         employee_profile_id: user.profile!.id,
+        organization_id: organizationId,
         status: "requested",
       },
     });
@@ -126,6 +135,7 @@ export async function cancelPtoRequest(formData: FormData) {
         entity_id: request.id,
         action: "cancel",
         actor_user_id: user.id,
+        organization_id: organizationId,
         before_state: { status: request.status },
         after_state: { status: updated.status },
       },
@@ -136,17 +146,21 @@ export async function cancelPtoRequest(formData: FormData) {
 }
 
 export async function reviewPtoRequest(formData: FormData) {
-  const user = await requireUser();
+  const { user, organization, membership } = await requireWritableOrganizationContext();
+  const viewer = { ...user, role: membership.role };
+  const organizationId = organization.id;
   const requestId = String(formData.get("requestId") ?? "").trim();
   const decision = String(formData.get("decision") ?? "").trim();
   const comment = String(formData.get("comment") ?? "").trim() || null;
 
   if (!requestId) throw new Error("Request is required.");
   if (decision !== "approve" && decision !== "reject") throw new Error("Invalid decision.");
-  if (!(await canReviewPtoRequest(user, requestId))) throw new Error("You are not authorized to review this request.");
+  if (!(await canReviewPtoRequest(viewer, requestId, organizationId))) {
+    throw new Error("You are not authorized to review this request.");
+  }
 
   await prisma.$transaction(async (tx) => {
-    const request = await tx.pto_requests.findUnique({ where: { id: requestId } });
+    const request = await tx.pto_requests.findFirst({ where: { id: requestId, organization_id: organizationId } });
     if (!request || request.status !== "requested") throw new Error("Only pending requests can be reviewed.");
 
     const nextStatus = decision === "approve" ? "approved" : "rejected";
@@ -165,6 +179,7 @@ export async function reviewPtoRequest(formData: FormData) {
         entity_id: request.id,
         action: decision,
         actor_user_id: user.id,
+        organization_id: organizationId,
         before_state: { status: request.status },
         after_state: { status: updated.status },
         metadata: comment ? { comment } : {},

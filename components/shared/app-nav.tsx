@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   CalendarCheck,
-  CalendarOff,
   Clock3,
+  Contact,
   FolderKanban,
   Settings,
+  UserRound,
   Users,
 } from "lucide-react";
 
@@ -17,7 +18,8 @@ import type { NavItem } from "@/lib/permissions/routes";
 
 const iconByHref = {
   "/my-timesheet": Clock3,
-  "/pto": CalendarOff,
+  "/profile": UserRound,
+  "/people": Contact,
   "/approvals": CalendarCheck,
   "/team": Users,
   "/reports": BarChart3,

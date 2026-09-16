@@ -6,22 +6,26 @@ import { prisma } from "@/lib/prisma";
 import { dateInput, dateOnly } from "./queries";
 import { getWeekRange, type DateStr } from "./week";
 
-export async function getTeamOverview(viewer: CurrentUser, weekStart: DateStr) {
+export async function getTeamOverview(viewer: CurrentUser, weekStart: DateStr, organizationId: string) {
   const week = getWeekRange(weekStart);
-  const reviewableIds = await getReviewableProfileIds(viewer);
+  const reviewableIds = await getReviewableProfileIds(viewer, organizationId);
   const profiles = await prisma.employee_profiles.findMany({
-    where: reviewableIds ? { id: { in: reviewableIds } } : {},
+    where: {
+      organization_id: organizationId,
+      ...(reviewableIds ? { id: { in: reviewableIds } } : {}),
+    },
     include: {
       user: true,
       project_assignments: {
-        where: { is_active: true },
+        where: { is_active: true, organization_id: organizationId },
         include: { project: true },
       },
       timesheet_periods: {
-        where: { week_start_date: dateInput(week.start) },
+        where: { week_start_date: dateInput(week.start), organization_id: organizationId },
       },
       time_entries: {
         where: {
+          organization_id: organizationId,
           entry_date: { gte: dateInput(week.start), lte: dateInput(week.end) },
         },
       },
@@ -44,6 +48,7 @@ export async function getTeamOverview(viewer: CurrentUser, weekStart: DateStr) {
       email: profile.user.email,
       projects: profile.project_assignments.map((a) => a.project.name),
       status: profile.timesheet_periods[0]?.status ?? "open",
+      periodId: profile.timesheet_periods[0]?.id ?? null,
       total: [...totals.values()].reduce((sum, value) => sum + value, 0),
       workdays,
     };

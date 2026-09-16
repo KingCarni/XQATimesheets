@@ -1,11 +1,11 @@
-import { requireRole } from "@/lib/auth/session";
+import { requireOrganizationAdmin } from "@/lib/tenant/context";
 import { getAdminProjectListData } from "@/lib/admin/projects";
 import { CreateProjectForm } from "@/components/admin/create-project-form";
 import { ProjectCard } from "@/components/admin/project-card";
 
 export default async function AdminProjectsPage() {
-  await requireRole("admin");
-  const projects = await getAdminProjectListData();
+  const { organization } = await requireOrganizationAdmin();
+  const projects = await getAdminProjectListData(organization.id);
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">

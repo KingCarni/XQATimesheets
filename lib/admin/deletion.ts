@@ -50,6 +50,12 @@ export async function getUserDeletionBlockers(user: {
     ownEntries,
     ownPeriods,
     ownPtoRequests,
+    hardwareCreated,
+    hardwareReviewed,
+    attachmentsUploaded,
+    ownContracts,
+    ownEquipment,
+    ownHardwareRequests,
   ] = await Promise.all([
     prisma.time_entries.count({ where: { created_by: user.id } }),
     prisma.time_entries.count({ where: { updated_by: user.id } }),
@@ -62,6 +68,12 @@ export async function getUserDeletionBlockers(user: {
     profileId ? prisma.time_entries.count({ where: { employee_profile_id: profileId } }) : Promise.resolve(0),
     profileId ? prisma.timesheet_periods.count({ where: { employee_profile_id: profileId } }) : Promise.resolve(0),
     profileId ? prisma.pto_requests.count({ where: { employee_profile_id: profileId } }) : Promise.resolve(0),
+    prisma.hardware_requests.count({ where: { created_by: user.id } }),
+    prisma.hardware_requests.count({ where: { reviewed_by: user.id } }),
+    prisma.contract_attachments.count({ where: { uploaded_by_user_id: user.id } }),
+    profileId ? prisma.employee_contracts.count({ where: { employee_profile_id: profileId } }) : Promise.resolve(0),
+    profileId ? prisma.equipment_assignments.count({ where: { employee_profile_id: profileId } }) : Promise.resolve(0),
+    profileId ? prisma.hardware_requests.count({ where: { employee_profile_id: profileId } }) : Promise.resolve(0),
   ]);
 
   const reasons: string[] = [];
@@ -76,5 +88,15 @@ export async function getUserDeletionBlockers(user: {
   if (ownPtoRequests > 0) reasons.push(`${ownPtoRequests} PTO request${ownPtoRequests === 1 ? "" : "s"}`);
   if (ptoCreated > 0) reasons.push(`${ptoCreated} PTO request${ptoCreated === 1 ? "" : "s"} filed`);
   if (ptoApproved > 0) reasons.push(`${ptoApproved} PTO approval${ptoApproved === 1 ? "" : "s"}`);
+  if (ownContracts > 0) reasons.push(`${ownContracts} contract${ownContracts === 1 ? "" : "s"}`);
+  if (ownEquipment > 0) reasons.push(`${ownEquipment} equipment assignment${ownEquipment === 1 ? "" : "s"}`);
+  if (ownHardwareRequests > 0)
+    reasons.push(`${ownHardwareRequests} hardware request${ownHardwareRequests === 1 ? "" : "s"}`);
+  if (hardwareCreated > 0)
+    reasons.push(`${hardwareCreated} hardware request${hardwareCreated === 1 ? "" : "s"} filed`);
+  if (hardwareReviewed > 0)
+    reasons.push(`${hardwareReviewed} hardware review${hardwareReviewed === 1 ? "" : "s"}`);
+  if (attachmentsUploaded > 0)
+    reasons.push(`${attachmentsUploaded} contract attachment${attachmentsUploaded === 1 ? "" : "s"} uploaded`);
   return reasons;
 }

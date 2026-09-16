@@ -10,9 +10,10 @@ export type AdminProjectRow = {
   assignmentCount: number;
 };
 
-/** All projects (active and inactive) for the admin Project Management page. */
-export async function getAdminProjectListData(): Promise<AdminProjectRow[]> {
+/** All projects (active and inactive) in the organization for the admin Project Management page. */
+export async function getAdminProjectListData(organizationId: string): Promise<AdminProjectRow[]> {
   const rows = await prisma.projects.findMany({
+    where: { organization_id: organizationId },
     select: {
       id: true,
       name: true,

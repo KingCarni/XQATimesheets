@@ -30,12 +30,14 @@ export type WeekSubmissionValidation = {
 export async function validateWeekForSubmission(
   profile: Row<"employee_profiles">,
   weekStart: DateStr,
+  organizationId: string,
 ): Promise<WeekSubmissionValidation> {
   const week = getWeekRange(weekStart);
 
   const entries = await prisma.time_entries.findMany({
     where: {
       employee_profile_id: profile.id,
+      organization_id: organizationId,
       entry_date: {
         gte: dateInput(week.start),
         lte: dateInput(week.end),
@@ -50,6 +52,7 @@ export async function validateWeekForSubmission(
   const ptoRequests = await prisma.pto_requests.findMany({
     where: {
       employee_profile_id: profile.id,
+      organization_id: organizationId,
       status: "approved",
       start_date: {
         lte: dateInput(week.end),

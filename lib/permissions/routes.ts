@@ -11,6 +11,8 @@ export const DEFAULT_AUTHED_PATH = "/my-timesheet";
  */
 const ROUTE_ROLES: Array<{ prefix: string; roles: readonly AppRole[] }> = [
   { prefix: "/my-timesheet", roles: ["employee", "manager", "admin"] },
+  { prefix: "/profile", roles: ["employee", "manager", "admin"] },
+  { prefix: "/people", roles: ["employee", "manager", "admin"] },
   { prefix: "/pto", roles: ["employee", "manager", "admin"] },
   { prefix: "/team", roles: ["employee", "manager", "admin"] },
   { prefix: "/approvals", roles: ["employee", "manager", "admin"] },
@@ -44,8 +46,13 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["employee", "manager", "admin"],
   },
   {
-    href: "/pto",
-    label: "Time Off",
+    href: "/profile",
+    label: "My Profile",
+    roles: ["employee", "manager", "admin"],
+  },
+  {
+    href: "/people",
+    label: "People",
     roles: ["employee", "manager", "admin"],
   },
   {

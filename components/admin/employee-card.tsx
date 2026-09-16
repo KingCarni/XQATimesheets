@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import type { AdminEmployeeDto } from "@/lib/admin/employees";
+import type { EmployeeWorkforce } from "@/lib/admin/workforce";
+import { EmployeeWorkforcePanels } from "./employee-workforce-panels";
 import {
   ProjectAssignmentPicker,
   type AdminProject,
@@ -29,9 +31,13 @@ const VISIBLE_PROJECT_SUMMARY = 2;
 export function EmployeeCard({
   user,
   projects,
+  workforce,
+  ptoTypes,
 }: {
   user: AdminEmployeeDto;
   projects: AdminProject[];
+  workforce?: EmployeeWorkforce | null;
+  ptoTypes?: { id: string; name: string }[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
@@ -216,6 +222,14 @@ export function EmployeeCard({
             ) : null}
           </form>
         </div>
+
+        {expanded && workforce && user.employee_profile ? (
+          <EmployeeWorkforcePanels
+            profileId={user.employee_profile.id}
+            workforce={workforce}
+            ptoTypes={ptoTypes ?? []}
+          />
+        ) : null}
       </div>
     </div>
   );

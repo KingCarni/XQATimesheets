@@ -13,8 +13,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "xQA Timesheets",
-  description: "Internal time tracking, review, and reporting",
+  title: {
+    default: "HourOps — Modern Timesheets for Teams",
+    template: "%s · HourOps",
+  },
+  description:
+    "Track hours, approve timesheets, manage time off, and understand where your team's time goes.",
+  applicationName: "HourOps",
+  openGraph: {
+    title: "HourOps — Modern Timesheets for Teams",
+    description:
+      "Track hours, approve timesheets, manage time off, and understand where your team's time goes.",
+    siteName: "HourOps",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
