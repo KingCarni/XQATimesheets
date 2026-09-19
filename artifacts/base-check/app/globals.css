@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+/*
+ * App design tokens. The workspace stays light and data-dense while navigation
+ * uses deep-navy surfaces. These are the HourOps NEUTRAL DEFAULTS; each tenant
+ * overrides the brand tokens at runtime from its own branding (see
+ * lib/branding/css.ts). The `--xqa-*` names are kept as stable token
+ * identifiers referenced across the app — the *values* are HourOps defaults, so
+ * a tenant with no branding never inherits another company's colours.
+ */
+:root {
+  --background: #f4f8fc;
+  --foreground: #101827;
+  --card: #ffffff;
+  --card-foreground: #101827;
+  --muted: #eef5fb;
+  --muted-foreground: #647486;
+  --border: #dbe6ef;
+  --input: #d8e3ee;
+  --ring: #2f9bf0;
+  --primary: #087bea;
+  --primary-foreground: #ffffff;
+  --destructive: #ef3f73;
+  --destructive-foreground: #ffffff;
+  --success: #18a058;
+  --warning: #f4a12b;
+  /* Brand token identifiers (values = HourOps defaults; overridden per tenant). */
+  --xqa-navy: #061b35;
+  --xqa-navy-2: #082544;
+  --xqa-blue: #087bea;
+  --xqa-blue-2: #3aa3f2;
+  --xqa-pink: #ef3f73;
+  --xqa-sky-soft: #e8f3fe;
+  --shadow-soft: 0 14px 38px rgba(8, 22, 34, 0.08);
+  --radius: 0.75rem;
+
+  /*
+   * HourOps public marketing palette — sampled from and aligned to the supplied
+   * logo/favicon. Deep navy, electric primary blue, bright cyan highlight, cool
+   * off-white surfaces and slate support. Used by the public marketing site.
+   */
+  --hourops-navy-deep: #061b35;
+  --hourops-navy: #082544;
+  --hourops-navy-2: #0e3866;
+  --hourops-blue: #087bea;
+  --hourops-blue-bright: #2f9bf0;
+  --hourops-cyan: #04c9f4;
+  --hourops-surface: #ffffff;
+  --hourops-surface-muted: #f3f8fd;
+  --hourops-border: #dce7f2;
+  --hourops-text: #0b1b2e;
+  --hourops-text-muted: #566577;
+  --hourops-slate: #5b7089;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-xqa-navy: var(--xqa-navy);
+  --color-xqa-navy-2: var(--xqa-navy-2);
+  --color-xqa-blue: var(--xqa-blue);
+  --color-xqa-blue-2: var(--xqa-blue-2);
+  --color-xqa-pink: var(--xqa-pink);
+  --color-xqa-sky-soft: var(--xqa-sky-soft);
+  --color-hourops-navy-deep: var(--hourops-navy-deep);
+  --color-hourops-navy: var(--hourops-navy);
+  --color-hourops-navy-2: var(--hourops-navy-2);
+  --color-hourops-blue: var(--hourops-blue);
+  --color-hourops-blue-bright: var(--hourops-blue-bright);
+  --color-hourops-cyan: var(--hourops-cyan);
+  --color-hourops-surface: var(--hourops-surface);
+  --color-hourops-surface-muted: var(--hourops-surface-muted);
+  --color-hourops-border: var(--hourops-border);
+  --color-hourops-text: var(--hourops-text);
+  --color-hourops-text-muted: var(--hourops-text-muted);
+  --color-hourops-slate: var(--hourops-slate);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(circle at 85% 0%, rgba(62, 155, 209, 0.16), transparent 30rem),
+    linear-gradient(180deg, #f8fbfe 0%, var(--background) 38rem);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* --- Marketing site: restrained entrance motion (respects reduced-motion) --- */
+@keyframes hourops-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ho-rise {
+  animation: hourops-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ho-rise-2 { animation-delay: 0.08s; }
+.ho-rise-3 { animation-delay: 0.16s; }
+.ho-rise-4 { animation-delay: 0.24s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ho-rise, .ho-rise-2, .ho-rise-3, .ho-rise-4 {
+    animation: none;
+  }
+  html { scroll-behavior: auto !important; }
+}

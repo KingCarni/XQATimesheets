@@ -1,0 +1,25 @@
+"use client";
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { useId, useState } from "react";
+import { ArrowRight, CalendarDays, Check, RotateCcw } from "lucide-react";
+import { ProductNote, StatusPill } from "./marketing-ui";
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const ROWS = [
+    ["Project Atlas", "Web", "Regression testing", "Checkout flow · release 2.4", "3.5"],
+    ["Mobile QA", "iOS", "Functional testing", "Onboarding & account setup", "2.5"],
+    ["Project Atlas", "Web", "Bug verification", "Verify fixes · AT-142, AT-148", "2.0"],
+];
+export function TimesheetPreview({ compact = false }) {
+    const id = useId();
+    const [day, setDay] = useState(0);
+    const [submitted, setSubmitted] = useState(false);
+    return (_jsxs("div", { className: `ho-timesheet ${compact ? "ho-compact-preview" : ""}`, "data-testid": `timesheet-preview-${id}`, children: [_jsxs("div", { className: "ho-product-toolbar", children: [_jsxs("div", { className: "ho-product-title", children: [_jsx("span", { className: "ho-toolbar-icon", children: _jsx(CalendarDays, { size: 19 }) }), _jsxs("div", { children: [_jsx("h3", { children: "My timesheet" }), _jsx("p", { children: "September 14\u201320, 2026" })] })] }), _jsxs("div", { className: "ho-toolbar-actions", children: [_jsx(StatusPill, { tone: submitted ? "submitted" : "open", label: submitted ? "Submitted" : "Open week" }), _jsx("button", { className: `ho-button ho-button-small ${submitted ? "ho-button-quiet" : ""}`, onClick: () => setSubmitted(!submitted), "data-testid": `submit-week-${id}`, children: submitted ? (_jsxs(_Fragment, { children: [_jsx(RotateCcw, { size: 13 }), " Reset preview"] })) : (_jsxs(_Fragment, { children: ["Submit week ", _jsx(ArrowRight, { size: 14 })] })) })] })] }), _jsxs("div", { className: "ho-timesheet-main", children: [_jsxs("div", { className: "ho-day-tabs", role: "tablist", "aria-label": "Timesheet days", children: [DAYS.map((d, i) => (_jsxs("button", { role: "tab", "aria-selected": day === i, "aria-controls": `day-panel-${id}`, id: `day-tab-${id}-${i}`, className: day === i ? "is-selected" : "", onClick: () => setDay(i), "data-testid": `timesheet-day-${i}-${id}`, children: [_jsxs("span", { children: [d, " ", _jsx("small", { children: 14 + i })] }), _jsxs("strong", { children: ["8.0", _jsx("span", { children: "h" })] }), _jsx("i", {})] }, d))), _jsxs("div", { className: "ho-timesheet-total", "data-testid": `timesheet-weekly-total-${id}`, children: [_jsx("span", { children: "Weekly total" }), _jsxs("strong", { children: ["40.0", _jsx("small", { children: "h" })] }), _jsx("span", { children: "5 of 5 days logged" })] })] }), _jsxs("div", { id: `day-panel-${id}`, role: "tabpanel", "aria-labelledby": `day-tab-${id}-${day}`, tabIndex: 0, className: "ho-timesheet-panel", "data-testid": `timesheet-day-panel-${id}`, children: [_jsxs("div", { className: "ho-day-caption", children: [_jsxs("strong", { children: [["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"][day], ", September", " ", 14 + day] }), _jsx("span", { children: "8.0 hours logged" })] }), _jsxs("div", { className: "ho-entry-table", role: "table", "aria-label": "Daily timesheet entries", children: [_jsx("div", { className: "ho-entry-row ho-entry-head", role: "row", children: ["Project", "Platform", "Work type", "Description", "Hours"].map((h) => (_jsx("span", { role: "columnheader", children: h }, h))) }), ROWS.map((r, i) => (_jsxs("div", { className: "ho-entry-row", role: "row", "data-testid": `timesheet-entry-${i}-${id}`, children: [_jsxs("span", { role: "cell", className: "ho-project-cell", children: [_jsx("i", { className: i === 1 ? "cyan" : "" }), r[0]] }), _jsx("span", { role: "cell", className: "ho-platform-cell", children: r[1] }), _jsx("span", { role: "cell", children: r[2] }), _jsx("span", { role: "cell", className: "ho-description-cell", children: day === 0
+                                                    ? r[3]
+                                                    : [
+                                                        "Sprint 18 · test execution",
+                                                        "Release candidate validation",
+                                                        "Retest resolved issues",
+                                                    ][i] }), _jsx("strong", { role: "cell", children: r[4] })] }, r[2])))] })] }), _jsxs("div", { className: "ho-timesheet-footer", children: [_jsxs("span", { role: "status", "aria-live": "polite", "data-testid": `timesheet-state-${id}`, children: [_jsx(Check, { size: 14 }), submitted
+                                        ? "Week submitted. Your manager can now review all 40 hours."
+                                        : "Everything in one place. Nothing to reconstruct on Friday."] }), _jsxs("span", { children: ["40.0h ", _jsx("small", { children: "this week" })] })] })] }), _jsx(ProductNote, { children: "Try selecting a day or submitting the week \u00B7 Illustrative data" })] }));
+}

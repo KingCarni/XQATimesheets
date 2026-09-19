@@ -1,0 +1,23 @@
+{
+  "canonical_repository": "/app/hourops",
+  "branch": "feature/landing-page-redesign",
+  "remote_changed": false,
+  "handoff_patch_check": "PASS against a clean archive of original commit e728324f9c85e4b85a1dea86c08264340aa1c668",
+  "source_typecheck": "PASS",
+  "source_lint": "PASS",
+  "source_production_build": "PASS",
+  "preview_production_build": "PASS",
+  "preview_and_root_eslint": "PASS; explicit ESLint 9 flat configs added for the modified marketing preview files",
+  "tested_widths": [1920, 1440, 1024, 768, 390, 320],
+  "horizontal_overflow": false,
+  "testing_agent_report": "/app/test_reports/iteration_1.json",
+  "testing_agent_followup": "Small mobile metadata fixed; larger text, controls and responsive approval rows verified.",
+  "additional_fixes": ["Corrected screenshot asset assignment and intrinsic sizes", "Arrow/Home/End navigation for tab groups", "All detected contrast failures fixed"],
+  "axe_tags": ["wcag2a", "wcag2aa", "wcag21aa"],
+  "axe_final_violations": {"fully_revealed_page": 0, "acme_workspace": 0, "vertex_workspace": 0, "timesheet_modal": 0, "approvals_modal": 0, "reporting_modal": 0},
+  "original_authenticated_app_changed": false,
+  "runtime_auth_tested": false,
+  "runtime_auth_note": "Original environment unavailable; source routes/actions preserved, full Next build passes. Isolated marketing preview explains auth boundary.",
+  "known_remaining_blocking_visual_issues": [],
+  "optional_followups": ["Safari/iOS real-device verification", "Local font hosting", "Consent-aware CTA conversion measurement"]
+}

@@ -1,0 +1,7 @@
+body { margin: 0; }
+.ho-preview-route { min-height: 100vh; background: #061b35; color: #f0f6fc; padding: 35px max(25px, 8vw); }
+.ho-preview-route main { max-width: 670px; margin: 15vh auto; }
+.ho-preview-route h1 { font-size: clamp(36px, 5vw, 58px); line-height: 1.15; letter-spacing: -2px; }
+.ho-preview-route .ho-preview-label { font: 11px 'IBM Plex Mono', monospace; color: #04c9f4; margin-bottom: 25px; }
+.ho-preview-route main>p:not(.ho-preview-label) { color: #9eb6cc; line-height: 1.9; margin-top: 25px; }
+.ho-preview-route .ho-button { margin-top: 30px; }

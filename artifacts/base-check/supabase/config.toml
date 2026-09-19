@@ -1,0 +1,25 @@
+# Supabase CLI config for local development.
+# Docs: https://supabase.com/docs/guides/cli/config
+project_id = "xqa-timesheets"
+
+[db]
+port = 54322
+major_version = 15
+
+[db.seed]
+enabled = true
+sql_paths = ["./seeds/seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Local dev site URL; override per-environment in the dashboard.
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
