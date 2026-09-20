@@ -2,7 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
-import { isReservedSlug, isValidSlug, normalizeSlug } from "@/lib/tenant/resolve";
+import { isReservedSlug, isValidSlug, normalizeSlug, ROOT_DOMAIN } from "@/lib/tenant/resolve";
 import { ONBOARDING_STEPS } from "@/lib/onboarding/steps";
 import {
   DEFAULT_ACCENT_COLOR,
@@ -92,7 +92,7 @@ export async function createOrganizationWithAdmin(
     await tx.organization_domains.create({
       data: {
         organization_id: organization.id,
-        hostname: `${slug}.${process.env.NEXT_PUBLIC_ROOT_DOMAIN || "hourops.ca"}`,
+        hostname: `${slug}.${ROOT_DOMAIN}`,
         type: "subdomain",
         verified: true,
         is_primary: true,

@@ -25,7 +25,7 @@ export async function buildAcceptInviteUrl(token: string): Promise<string> {
 
 /**
  * The absolute origin of a tenant's workspace, derived from the current
- * request's host so it is correct in every environment: `<slug>.hourops.ca` in
+ * request's host so it is correct in every environment: `<slug>.myhourvault.com` in
  * production and `<slug>.localhost:<port>` in local dev. Selecting an org in the
  * chooser navigates here — tenancy is host-based, so the destination host IS the
  * organization selection.

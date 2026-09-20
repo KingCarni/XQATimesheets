@@ -2,8 +2,8 @@
  * Pure tenant-hostname resolution (no DB, no server-only imports) so it can be
  * used from middleware, server code, and tests alike.
  *
- * Production model:  <slug>.hourops.ca   → tenant "<slug>"
- *                    hourops.ca / www    → platform root (no tenant)
+ * Production model:  <slug>.myhourvault.com → tenant "<slug>"
+ *                    myhourvault.com / www → platform root (no tenant)
  * Local dev model:   <slug>.localhost    → tenant "<slug>"
  *                    localhost           → platform root (no tenant)
  *
@@ -12,7 +12,7 @@
  * this stays a cheap, allocation-free string check.
  */
 
-export const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "hourops.ca";
+export const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "myhourvault.com";
 
 /** Subdomains that are platform/system-reserved and never map to a tenant. */
 export const RESERVED_SLUGS = new Set([
@@ -43,6 +43,7 @@ export const RESERVED_SLUGS = new Set([
   "accounts",
   "billing",
   "hourops",
+  "myhourvault",
 ]);
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -84,7 +85,7 @@ export function getTenantSlugFromHost(host: string | null | undefined): string |
     const suffix = `.${base}`;
     if (hostname.endsWith(suffix)) {
       const label = hostname.slice(0, -suffix.length);
-      // Only a single-label subdomain maps to a tenant (a.b.hourops.ca does not).
+      // Only a single-label subdomain maps to a tenant (a.b.myhourvault.com does not).
       if (!label || label.includes(".")) return null;
       if (isReservedSlug(label) || !isValidSlug(label)) return null;
       return label;
