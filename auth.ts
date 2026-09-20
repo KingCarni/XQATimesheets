@@ -13,14 +13,15 @@ const credentialsSchema = z.object({
 /**
  * Cross-subdomain session cookies for the tenant model.
  *
- * Tenancy is host-based (`hourops.ca`, `xqa.hourops.ca`, `<slug>.hourops.ca`),
- * so a session created on one host must be readable on the others. That only
- * works if the session cookie's `Domain` is the shared parent (e.g.
- * `.hourops.ca`). This is configured ENTIRELY through `AUTH_COOKIE_DOMAIN`:
+ * Tenancy is host-based (`myhourvault.com`, `xqa.myhourvault.com`,
+ * `<slug>.myhourvault.com`), so a session created on one host must be readable
+ * on the others. That only works if the session cookie's `Domain` is the shared
+ * parent (e.g. `.myhourvault.com`). This is configured ENTIRELY through
+ * `AUTH_COOKIE_DOMAIN`:
  *   - unset (local dev, `localhost`, preview): omit the cookie overrides
  *     completely, so Auth.js uses its default host-only cookies — dev is never
  *     affected, and `<slug>.localhost` is tested per-host.
- *   - set to `.hourops.ca` in production: the session, callback, and CSRF
+ *   - set to `.myhourvault.com` in production: the session, callback, and CSRF
  *     cookies are shared across every tenant subdomain.
  *
  * Note the CSRF cookie uses the `__Secure-` prefix (not `__Host-`) because

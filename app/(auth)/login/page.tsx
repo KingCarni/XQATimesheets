@@ -14,14 +14,14 @@ export default async function LoginPage() {
       <CardHeader className="items-center text-center">
         <div className="mb-2">
           <OrgLogo
-            name={branding?.name ?? "HourOps"}
+            name={branding?.name ?? "MyHourVault"}
             hasLogo={Boolean(branding?.hasLogo)}
             src={branding ? `/api/org-logo?slug=${encodeURIComponent(branding.slug)}` : "/api/org-logo"}
             imgClassName="h-11 w-auto max-w-[12rem]"
             textClassName="text-2xl"
           />
         </div>
-        <CardTitle>{branding ? "Sign in" : "Sign in to HourOps"}</CardTitle>
+        <CardTitle>{branding ? "Sign in" : "Sign in to MyHourVault"}</CardTitle>
         <CardDescription>
           {branding ? `Welcome back to ${branding.name}.` : "Sign in to log and review time."}
         </CardDescription>
@@ -31,7 +31,7 @@ export default async function LoginPage() {
           <LoginForm />
         </Suspense>
         <p className="text-muted-foreground text-center text-sm">
-          New to HourOps?{" "}
+          New to MyHourVault?{" "}
           <Link href="/signup" className="text-xqa-blue font-medium hover:underline">
             Create a company
           </Link>

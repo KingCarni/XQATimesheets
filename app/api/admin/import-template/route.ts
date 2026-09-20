@@ -12,7 +12,7 @@ export async function GET() {
   }
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "HourOps";
+  wb.creator = "MyHourVault";
   const sheet = wb.addWorksheet("Employees");
   sheet.columns = [
     { header: "Name", key: "name", width: 26 },
@@ -27,7 +27,7 @@ export async function GET() {
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": 'attachment; filename="hourops-employee-import-template.xlsx"',
+      "Content-Disposition": 'attachment; filename="myhourvault-employee-import-template.xlsx"',
     },
   });
 }

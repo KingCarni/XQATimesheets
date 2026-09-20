@@ -46,7 +46,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: S
   return (
     <div className="flex flex-col gap-6">
       <div className="text-white">
-        <p className="text-sm font-medium tracking-wide text-white/60">Welcome to HourOps</p>
+        <p className="text-sm font-medium tracking-wide text-white/60">Welcome to MyHourVault</p>
         <h1 className="text-2xl font-semibold">Set up {organization.name}</h1>
       </div>
 

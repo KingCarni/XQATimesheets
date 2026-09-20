@@ -14,17 +14,17 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "HourOps — Modern Timesheets for Teams",
-    template: "%s · HourOps",
+    default: "MyHourVault — Your Hours. Accounted For.",
+    template: "%s · MyHourVault",
   },
   description:
     "Track hours, approve timesheets, manage time off, and understand where your team's time goes.",
-  applicationName: "HourOps",
+  applicationName: "MyHourVault",
   openGraph: {
-    title: "HourOps — Modern Timesheets for Teams",
+    title: "MyHourVault — Your Hours. Accounted For.",
     description:
       "Track hours, approve timesheets, manage time off, and understand where your team's time goes.",
-    siteName: "HourOps",
+    siteName: "MyHourVault",
     type: "website",
   },
 };

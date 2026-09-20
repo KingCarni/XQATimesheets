@@ -77,7 +77,7 @@ export async function buildReportXlsx(
   opts?: { summary?: ReportExportSummary; meta?: ReportExportMeta },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "HourOps";
+  workbook.creator = "MyHourVault";
   workbook.created = new Date();
 
   if (opts?.summary || opts?.meta) {

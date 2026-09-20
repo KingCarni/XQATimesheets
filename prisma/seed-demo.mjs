@@ -31,7 +31,7 @@ const DEMO_ADMIN_EMAIL = "demo@acme-qa.example.com";
 const DEMO_PASSWORD = "hourops-demo";
 const DEMO_PRIMARY_COLOR = "#7c3aed";
 const DEMO_ACCENT_COLOR = "#1e1b4b";
-const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "hourops.ca";
+const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "myhourvault.com";
 
 /** Matches lib/auth/password.ts (scrypt$N$r$p$salt$key, base64url). */
 function hashPassword(password) {
