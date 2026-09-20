@@ -1,11 +1,15 @@
 import { requireOrganizationAdmin } from "@/lib/tenant/context";
 import { getAdminProjectListData } from "@/lib/admin/projects";
+import { getProjectPayPeriodViews } from "@/lib/admin/project-pay-periods";
+import { getOrgPayPeriodContext, orgToday } from "@/lib/pay-periods/queries";
 import { CreateProjectForm } from "@/components/admin/create-project-form";
 import { ProjectCard } from "@/components/admin/project-card";
 
 export default async function AdminProjectsPage() {
   const { organization } = await requireOrganizationAdmin();
   const projects = await getAdminProjectListData(organization.id);
+  const payPeriodViews = await getProjectPayPeriodViews(organization.id);
+  const today = orgToday(await getOrgPayPeriodContext(organization.id));
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5">
@@ -23,7 +27,12 @@ export default async function AdminProjectsPage() {
           Existing Projects ({projects.length})
         </h2>
         {projects.map((project) => (
-          <ProjectCard key={project.id} project={project} />
+          <ProjectCard
+            key={project.id}
+            project={project}
+            payPeriod={payPeriodViews.get(project.id) ?? null}
+            today={today}
+          />
         ))}
         {projects.length === 0 ? (
           <p className="text-sm text-muted-foreground">No projects yet.</p>

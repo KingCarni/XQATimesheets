@@ -6,11 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { updateProject, deleteProject, type ActionResult } from "@/app/(app)/admin/projects/actions";
 import type { AdminProjectRow } from "@/lib/admin/projects";
+import type { ProjectPayPeriodView } from "@/lib/admin/project-pay-periods";
+import { ProjectPayPeriod } from "./project-pay-period";
 
 const updateInitialState: ActionResult<{ updated: true }> | null = null;
 const deleteInitialState: ActionResult<{ deleted: true }> | null = null;
 
-export function ProjectCard({ project }: { project: AdminProjectRow }) {
+export function ProjectCard({
+  project,
+  payPeriod,
+  today,
+}: {
+  project: AdminProjectRow;
+  payPeriod?: ProjectPayPeriodView | null;
+  today?: string;
+}) {
   const [updateState, updateAction, updatePending] = useActionState(updateProject, updateInitialState);
   const [deleteState, deleteAction, deletePending] = useActionState(deleteProject, deleteInitialState);
 
@@ -83,6 +93,8 @@ export function ProjectCard({ project }: { project: AdminProjectRow }) {
           <span className="text-sm text-destructive">{deleteState.error}</span>
         ) : null}
       </form>
+
+      {payPeriod && today ? <ProjectPayPeriod projectId={project.id} view={payPeriod} today={today} /> : null}
     </div>
   );
 }

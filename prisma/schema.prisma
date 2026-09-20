@@ -65,6 +65,8 @@ enum hardware_request_status {
 enum payroll_period {
   weekly
   biweekly
+  semimonthly
+  monthly
 }
 
 enum organization_domain_type {
@@ -188,6 +190,13 @@ model projects {
   requires_platform Boolean  @default(false)
   color_token       String?
   organization_id   String?  @db.Uuid
+  // Optional per-project payroll override (MHV-8). NULL cadence = inherit the
+  // organization config dynamically (nothing is copied onto the project).
+  payroll_period_override   payroll_period?
+  payroll_start_weekday     Int?
+  payroll_anchor_date       DateTime?        @db.Date
+  payroll_semimonthly_day   Int?
+  payroll_monthly_start_day Int?
   created_at        DateTime @default(now()) @db.Timestamptz(6)
   updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -545,7 +554,13 @@ model organizations {
   slug                    String          @unique
   timezone                String          @default("America/Vancouver")
   week_start              Int             @default(1) // date-fns convention: 1 = Monday, 0 = Sunday
+  // Payroll/reporting cadence (MHV-8). Separate from `week_start`, which is the
+  // EMPLOYEE weekly-timesheet display/submission setting. NULL = weekly fallback.
   payroll_period          payroll_period?
+  payroll_start_weekday   Int?            // 0 = Sunday … 6 = Saturday; weekly/biweekly only
+  payroll_anchor_date     DateTime?       @db.Date // biweekly cycle anchor; must fall on payroll_start_weekday
+  payroll_semimonthly_day Int?            // semi-monthly split day (1–28); period 1 = 1..day, period 2 = day+1..EOM
+  payroll_monthly_start_day Int?          // monthly boundary day (1–28); 1 = calendar month, else startDay..(startDay-1 next month)
   is_demo                 Boolean         @default(false)
   onboarding_step         String          @default("company")
   onboarding_completed_at DateTime?       @db.Timestamptz(6)

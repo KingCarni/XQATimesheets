@@ -32,7 +32,7 @@ export type ContractStatus = (typeof CONTRACT_STATUSES)[number];
 export const EQUIPMENT_STATUSES = ["assigned", "returned", "retired"] as const;
 export type EquipmentStatus = (typeof EQUIPMENT_STATUSES)[number];
 
-export const PAYROLL_PERIODS = ["weekly", "biweekly"] as const;
+export const PAYROLL_PERIODS = ["weekly", "biweekly", "semimonthly", "monthly"] as const;
 export type PayrollPeriod = (typeof PAYROLL_PERIODS)[number];
 
 export const ORGANIZATION_DOMAIN_TYPES = ["subdomain", "custom"] as const;
