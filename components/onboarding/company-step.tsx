@@ -38,35 +38,21 @@ export function CompanyStep({ settings }: { settings: OrganizationSettings }) {
         <Input id="name" name="name" defaultValue={settings.name} required />
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="timezone">Default timezone</Label>
-          <Select id="timezone" name="timezone" defaultValue={settings.timezone}>
-            {zones.map((z) => (
-              <option key={z} value={z}>
-                {z}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="weekStart">Week starts on</Label>
-          <Select id="weekStart" name="weekStart" defaultValue={String(settings.weekStart)}>
-            <option value="1">Monday</option>
-            <option value="0">Sunday</option>
-          </Select>
-        </div>
-      </div>
-
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="payrollPeriod">Payroll period (optional)</Label>
-        <Select id="payrollPeriod" name="payrollPeriod" defaultValue={settings.payrollPeriod ?? ""}>
-          <option value="">Not set</option>
-          <option value="weekly">Weekly</option>
-          <option value="biweekly">Bi-weekly</option>
+        <Label htmlFor="timezone">Default timezone</Label>
+        <Select id="timezone" name="timezone" defaultValue={settings.timezone}>
+          {zones.map((z) => (
+            <option key={z} value={z}>
+              {z}
+            </option>
+          ))}
         </Select>
       </div>
+
+      <p className="text-muted-foreground text-sm">
+        Pay periods and project-specific payroll schedules can be configured from your workspace
+        after setup.
+      </p>
 
       {state.error ? (
         <p className="text-destructive text-sm" role="alert">

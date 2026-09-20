@@ -307,7 +307,13 @@ export async function getHoursByWeek(viewer: CurrentUser, filters: ReportFilters
     _sum: { hours: true },
   });
 
-  const periodIds = grouped.map((g) => g.timesheet_period_id);
+  // Legacy weekly rollup. Entries on the new operational workflow (nullable
+  // timesheet_period_id) are handled by the project-scoped report path — see
+  // MHV-2/5/9 downstream work; here we only roll up entries that still carry a
+  // weekly period.
+  const periodIds = grouped
+    .map((g) => g.timesheet_period_id)
+    .filter((id): id is string => id !== null);
   const periods = await prisma.timesheet_periods.findMany({
     where: { id: { in: periodIds } },
     select: { id: true, week_start_date: true },
@@ -316,6 +322,7 @@ export async function getHoursByWeek(viewer: CurrentUser, filters: ReportFilters
 
   const totals = new Map<DateStr, number>();
   for (const g of grouped) {
+    if (!g.timesheet_period_id) continue;
     const week = weekByPeriod.get(g.timesheet_period_id);
     if (!week) continue;
     const hours = g._sum.hours ? decimal(g._sum.hours) : 0;
@@ -370,7 +377,9 @@ export async function getReportRows(
   const truncated = Boolean(opts.limit && entries.length > opts.limit);
   const page = opts.limit ? entries.slice(0, opts.limit) : entries;
 
-  const periodIds = [...new Set(page.map((e) => e.timesheet_period.id))];
+  const periodIds = [
+    ...new Set(page.map((e) => e.timesheet_period?.id).filter((id): id is string => Boolean(id))),
+  ];
   const approvals = periodIds.length
     ? await prisma.approvals.findMany({
         where: { timesheet_period_id: { in: periodIds }, action: "approve" },
@@ -380,6 +389,7 @@ export async function getReportRows(
     : [];
   const latestApprovalByPeriod = new Map<string, { name: string; at: string }>();
   for (const approval of approvals) {
+    if (!approval.timesheet_period_id) continue;
     if (latestApprovalByPeriod.has(approval.timesheet_period_id)) continue;
     latestApprovalByPeriod.set(approval.timesheet_period_id, {
       name: approval.actor.employee_profile?.full_name ?? approval.actor.email,
@@ -388,7 +398,11 @@ export async function getReportRows(
   }
 
   const rows: ReportRow[] = page.map((entry) => {
-    const approval = latestApprovalByPeriod.get(entry.timesheet_period.id);
+    // Legacy weekly period drives status/weekStart here. Entries on the new
+    // operational workflow (no weekly period) fall back to their own date until
+    // Reports move to project periods (MHV-2/5/9 downstream).
+    const period = entry.timesheet_period;
+    const approval = period ? latestApprovalByPeriod.get(period.id) : undefined;
     return {
       id: entry.id,
       date: dateOnly(entry.entry_date),
@@ -398,8 +412,8 @@ export async function getReportRows(
       hours: decimal(entry.hours),
       workType: entry.activity_type.name,
       description: entry.description,
-      status: entry.timesheet_period.status,
-      weekStart: dateOnly(entry.timesheet_period.week_start_date),
+      status: period?.status ?? "open",
+      weekStart: period ? dateOnly(period.week_start_date) : dateOnly(entry.entry_date),
       approvedBy: approval?.name ?? null,
       approvedAt: approval?.at ?? null,
     };

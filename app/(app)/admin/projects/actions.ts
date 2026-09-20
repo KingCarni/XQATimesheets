@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireWritableOrganizationAdmin } from "@/lib/tenant/context";
 import { getProjectDeletionBlockers } from "@/lib/admin/deletion";
+import { updateProjectPayPeriod } from "@/lib/admin/project-pay-period-mutations";
 import { prisma } from "@/lib/prisma";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -86,6 +87,32 @@ export async function updateProject(
     return { ok: true, data: { updated: true } };
   } catch (e) {
     return { ok: false, error: errorMessage(e, "Could not save project.") };
+  }
+}
+
+export async function saveProjectPayPeriod(
+  _prevState: ActionResult<{ updated: true }> | null,
+  formData: FormData,
+): Promise<ActionResult<{ updated: true }>> {
+  try {
+    const { organization, user } = await requireWritableOrganizationAdmin();
+
+    const id = z.string().uuid().parse(String(formData.get("id") ?? ""));
+    await updateProjectPayPeriod(organization.id, user.id, id, {
+      mode: String(formData.get("mode") ?? "inherit"),
+      cadence: formData.get("cadence") != null ? String(formData.get("cadence")) : undefined,
+      startWeekday: formData.get("startWeekday") != null ? String(formData.get("startWeekday")) : undefined,
+      anchor: formData.get("anchor") != null ? String(formData.get("anchor")) : undefined,
+      splitDay: formData.get("splitDay") != null ? String(formData.get("splitDay")) : undefined,
+      monthlyStartDay: formData.get("monthlyStartDay") != null ? String(formData.get("monthlyStartDay")) : undefined,
+    });
+
+    revalidatePath("/admin/projects");
+    revalidatePath("/reports");
+
+    return { ok: true, data: { updated: true } };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e, "Could not save project pay period.") };
   }
 }
 

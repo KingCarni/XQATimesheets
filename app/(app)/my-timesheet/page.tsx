@@ -1,8 +1,6 @@
 import { requireOrganizationContext } from "@/lib/tenant/context";
-import { getWeekData } from "@/lib/timesheets/queries";
-import { getWeekRange, todayStr } from "@/lib/timesheets/week";
-import { isPeriodEditable } from "@/types/domain";
-import { WeeklyTimesheet } from "@/components/timesheets/weekly-timesheet";
+import { getMyTimesheetData } from "@/lib/timesheets/operational-view";
+import { OperationalTimesheet } from "@/components/timesheets/operational-timesheet";
 import {
   Card,
   CardContent,
@@ -10,15 +8,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 export default async function MyTimesheetPage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const { user, organization } = await requireOrganizationContext();
-  const { week: weekParam } = await searchParams;
+  const params = await searchParams;
 
   if (!user.profile) {
     return (
@@ -38,34 +34,14 @@ export default async function MyTimesheetPage({
     );
   }
 
-  const seed =
-    weekParam && DATE_RE.test(weekParam)
-      ? weekParam
-      : todayStr();
-
-  const weekStart = getWeekRange(seed).start;
-
-  const data = await getWeekData(user.profile, weekStart, organization.id);
-
-  const editable = data.period
-    ? isPeriodEditable(data.period.status)
-    : true;
+  const data = await getMyTimesheetData(user.profile, organization.id, params);
 
   return (
-    <WeeklyTimesheet
-      key={weekStart}
-      weekStart={weekStart}
-      week={data.week}
-      periodStatus={data.period?.status ?? null}
-      submittedAt={data.period?.submitted_at ?? null}
-      rejectionReason={data.period?.rejection_reason ?? null}
-      editable={editable}
-      initialEntries={data.entries}
-      catalogs={{
-        projects: data.projects,
-        platforms: data.platforms,
-        activityTypes: data.activityTypes,
-      }}
+    <OperationalTimesheet
+      today={data.today}
+      projectSections={data.projectSections}
+      general={data.general}
+      catalogs={data.catalogs}
       templates={data.templates}
     />
   );

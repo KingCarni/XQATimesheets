@@ -8,7 +8,7 @@ export default function SignupPage() {
     <Card className="w-full max-w-md border-white/10 bg-white/95">
       <CardHeader className="items-center text-center">
         <CardTitle>Create your workspace</CardTitle>
-        <CardDescription>Set up HourOps for your company in a couple of minutes.</CardDescription>
+        <CardDescription>Set up MyHourVault for your company in a couple of minutes.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <SignupForm />

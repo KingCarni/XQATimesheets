@@ -80,6 +80,11 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Projects",
     roles: ["admin"],
   },
+  {
+    href: "/admin/settings",
+    label: "Pay Periods",
+    roles: ["admin"],
+  },
 ];
 
 export function navItemsForRole(

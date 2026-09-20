@@ -1,7 +1,6 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import type { PayrollPeriod } from "@/types/domain";
 import { isOnboardingStep, type OnboardingStep } from "./steps";
 
 /**
@@ -23,25 +22,25 @@ export async function setOnboardingStep(
 export type CompanyDetailsInput = {
   name: string;
   timezone: string;
-  weekStart: number;
-  payrollPeriod: PayrollPeriod | null;
 };
 
-/** Save the company-details step. */
+/**
+ * Save the company-details step. Payroll cadence and week-start are configured
+ * post-onboarding under Admin → Pay periods (org default + optional per-project
+ * overrides); onboarding only sets identity + timezone here, and the legacy
+ * `week_start` / `payroll_period` columns keep their database defaults.
+ */
 export async function saveCompanyDetails(
   organizationId: string,
   input: CompanyDetailsInput,
 ): Promise<void> {
   const name = input.name.trim();
   if (!name) throw new Error("Enter a company name.");
-  const weekStart = input.weekStart === 0 ? 0 : 1;
   await prisma.organizations.update({
     where: { id: organizationId },
     data: {
       name,
       timezone: input.timezone.trim() || "America/Vancouver",
-      week_start: weekStart,
-      payroll_period: input.payrollPeriod,
     },
   });
 }

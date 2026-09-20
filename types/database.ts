@@ -245,7 +245,8 @@ export type Database = {
         Row: {
           id: string;
           employee_profile_id: string;
-          timesheet_period_id: string;
+          timesheet_period_id: string | null;
+          project_period_id: string | null;
           entry_date: string;
           project_id: string | null;
           platform_id: string | null;
@@ -259,7 +260,8 @@ export type Database = {
         Insert: {
           id?: string;
           employee_profile_id: string;
-          timesheet_period_id: string;
+          timesheet_period_id?: string | null;
+          project_period_id?: string | null;
           entry_date: string;
           project_id?: string | null;
           platform_id?: string | null;
@@ -278,7 +280,8 @@ export type Database = {
       approvals: {
         Row: {
           id: string;
-          timesheet_period_id: string;
+          timesheet_period_id: string | null;
+          project_period_id: string | null;
           actor_user_id: string;
           action: ApprovalAction;
           comment: string | null;
@@ -286,7 +289,8 @@ export type Database = {
         };
         Insert: {
           id?: string;
-          timesheet_period_id: string;
+          timesheet_period_id?: string | null;
+          project_period_id?: string | null;
           actor_user_id: string;
           action: ApprovalAction;
           comment?: string | null;

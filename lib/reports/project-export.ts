@@ -41,7 +41,7 @@ export function buildProjectCsv(report: ProjectReport): string {
 /** Multi-sheet workbook: Summary, Employee breakdown, Activity breakdown, Detail. */
 export async function buildProjectXlsx(report: ProjectReport): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "HourOps";
+  wb.creator = "MyHourVault";
   wb.created = new Date();
 
   const summary = wb.addWorksheet("Summary");

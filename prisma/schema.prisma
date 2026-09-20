@@ -65,6 +65,8 @@ enum hardware_request_status {
 enum payroll_period {
   weekly
   biweekly
+  semimonthly
+  monthly
 }
 
 enum organization_domain_type {
@@ -81,6 +83,7 @@ enum audit_entity_type {
   activity_type
   time_entry
   timesheet_period
+  project_timesheet_period
   approval
   pto_request
   employee_contract
@@ -110,6 +113,8 @@ model users {
   updated_entries               time_entries[]          @relation("entry_updated_by")
   submitted_periods             timesheet_periods[]     @relation("period_submitted_by")
   locked_periods                timesheet_periods[]     @relation("period_locked_by")
+  submitted_project_periods     project_timesheet_periods[] @relation("project_period_submitted_by")
+  locked_project_periods        project_timesheet_periods[] @relation("project_period_locked_by")
   approvals                     approvals[]
   audit_history                 audit_history[]
   created_pto_requests          pto_requests[]          @relation("pto_created_by")
@@ -155,6 +160,7 @@ model employee_profiles {
   project_assignments   project_assignments[]
   entry_templates       entry_templates[]
   timesheet_periods     timesheet_periods[]
+  project_timesheet_periods project_timesheet_periods[]
   time_entries          time_entries[]
   pto_requests          pto_requests[]
   pto_balances          pto_balances[]
@@ -188,6 +194,13 @@ model projects {
   requires_platform Boolean  @default(false)
   color_token       String?
   organization_id   String?  @db.Uuid
+  // Optional per-project payroll override (MHV-8). NULL cadence = inherit the
+  // organization config dynamically (nothing is copied onto the project).
+  payroll_period_override   payroll_period?
+  payroll_start_weekday     Int?
+  payroll_anchor_date       DateTime?        @db.Date
+  payroll_semimonthly_day   Int?
+  payroll_monthly_start_day Int?
   created_at        DateTime @default(now()) @db.Timestamptz(6)
   updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -195,6 +208,7 @@ model projects {
   project_assignments project_assignments[]
   entry_templates     entry_templates[]
   time_entries        time_entries[]
+  project_timesheet_periods project_timesheet_periods[]
 
   // Project code/name are unique WITHIN an organization, not globally, so two
   // tenants can both have a "PVVK" or "Internal" project.
@@ -316,10 +330,59 @@ model timesheet_periods {
   @@index([organization_id], map: "idx_periods_org")
 }
 
+// MHV-8: the operational submission unit. Scoped to employee + project +
+// effective pay period. Workflow/state metadata only — it deliberately stores NO
+// hours (time_entries remain the single source of hour data, resolved by
+// project_id + entry_date within [period_start_date, period_end_date]).
+//
+// Boundaries are PERSISTED at creation and never recomputed, so changing a
+// project's pay-period config later cannot move the boundaries of an already
+// submitted/approved/locked historical period. `cadence` records which config
+// produced the row for audit/debugging.
+model project_timesheet_periods {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id     String           @db.Uuid
+  employee_profile_id String           @db.Uuid
+  project_id          String           @db.Uuid
+  period_start_date   DateTime         @db.Date
+  period_end_date     DateTime         @db.Date
+  cadence             payroll_period
+  status              timesheet_status @default(open)
+  submitted_at        DateTime?        @db.Timestamptz(6)
+  submitted_by        String?          @db.Uuid
+  locked_at           DateTime?        @db.Timestamptz(6)
+  locked_by           String?          @db.Uuid
+  rejection_reason    String?
+  created_at          DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
+
+  organization      organizations     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  employee_profile  employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
+  project           projects          @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  submitted_by_user users?            @relation("project_period_submitted_by", fields: [submitted_by], references: [id])
+  locked_by_user    users?            @relation("project_period_locked_by", fields: [locked_by], references: [id])
+  time_entries      time_entries[]
+  approvals         approvals[]
+
+  // A given employee has at most one workflow row per project per period start.
+  // Overlapping ranges ACROSS different projects are valid (different project_id).
+  @@unique([employee_profile_id, project_id, period_start_date])
+  @@index([organization_id, status], map: "idx_project_periods_org_status")
+  @@index([project_id, period_start_date], map: "idx_project_periods_project")
+  @@index([employee_profile_id, period_start_date], map: "idx_project_periods_employee")
+}
+
 model time_entries {
   id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   employee_profile_id String   @db.Uuid
-  timesheet_period_id String   @db.Uuid
+  // Legacy weekly workflow FK. Nullable since MHV-8: new entries are driven by
+  // the project-scoped operational period (`project_period_id`) instead, and
+  // pre-MHV-8 rows keep their original weekly period for historical continuity.
+  timesheet_period_id String?  @db.Uuid
+  // Operational submission unit (employee + project + effective pay period).
+  // Resolved from the entry's project + date; NULL only for legacy rows not yet
+  // backfilled. This — not timesheet_period_id — drives submit/approve/lock.
+  project_period_id   String?  @db.Uuid
   entry_date          DateTime @db.Date
   project_id          String?  @db.Uuid
   platform_id         String?  @db.Uuid
@@ -335,8 +398,9 @@ model time_entries {
 
   organization     organizations?    @relation(fields: [organization_id], references: [id])
   employee_profile employee_profiles @relation(fields: [employee_profile_id], references: [id], onDelete: Cascade)
-  timesheet_period timesheet_periods @relation(fields: [timesheet_period_id], references: [id], onDelete: Cascade)
-  project          projects?         @relation(fields: [project_id], references: [id])
+  timesheet_period timesheet_periods?         @relation(fields: [timesheet_period_id], references: [id], onDelete: Cascade)
+  project_period   project_timesheet_periods? @relation(fields: [project_period_id], references: [id], onDelete: SetNull)
+  project          projects?                  @relation(fields: [project_id], references: [id])
   platform         platforms?        @relation(fields: [platform_id], references: [id])
   activity_type    activity_types    @relation(fields: [activity_type_id], references: [id])
   created_by_user  users             @relation("entry_created_by", fields: [created_by], references: [id])
@@ -345,23 +409,29 @@ model time_entries {
   @@index([employee_profile_id, entry_date], map: "idx_time_entries_employee_date")
   @@index([project_id, entry_date], map: "idx_time_entries_project_date")
   @@index([timesheet_period_id], map: "idx_time_entries_period")
+  @@index([project_period_id], map: "idx_time_entries_project_period")
   @@index([organization_id, entry_date], map: "idx_time_entries_org_date")
 }
 
 model approvals {
   id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  timesheet_period_id String          @db.Uuid
+  // Exactly one of timesheet_period_id / project_period_id is set. Legacy weekly
+  // approvals reference the former; MHV-8 project-period approvals the latter.
+  timesheet_period_id String?         @db.Uuid
+  project_period_id   String?         @db.Uuid
   actor_user_id       String          @db.Uuid
   action              approval_action
   comment             String?
   organization_id     String?         @db.Uuid
   created_at          DateTime        @default(now()) @db.Timestamptz(6)
 
-  organization     organizations?    @relation(fields: [organization_id], references: [id])
-  timesheet_period timesheet_periods @relation(fields: [timesheet_period_id], references: [id], onDelete: Cascade)
-  actor            users             @relation(fields: [actor_user_id], references: [id])
+  organization     organizations?             @relation(fields: [organization_id], references: [id])
+  timesheet_period timesheet_periods?         @relation(fields: [timesheet_period_id], references: [id], onDelete: Cascade)
+  project_period   project_timesheet_periods? @relation(fields: [project_period_id], references: [id], onDelete: Cascade)
+  actor            users                      @relation(fields: [actor_user_id], references: [id])
 
   @@index([timesheet_period_id, created_at], map: "idx_approvals_period")
+  @@index([project_period_id, created_at], map: "idx_approvals_project_period")
   @@index([organization_id], map: "idx_approvals_org")
 }
 
@@ -545,7 +615,13 @@ model organizations {
   slug                    String          @unique
   timezone                String          @default("America/Vancouver")
   week_start              Int             @default(1) // date-fns convention: 1 = Monday, 0 = Sunday
+  // Payroll/reporting cadence (MHV-8). Separate from `week_start`, which is the
+  // EMPLOYEE weekly-timesheet display/submission setting. NULL = weekly fallback.
   payroll_period          payroll_period?
+  payroll_start_weekday   Int?            // 0 = Sunday … 6 = Saturday; weekly/biweekly only
+  payroll_anchor_date     DateTime?       @db.Date // biweekly cycle anchor; must fall on payroll_start_weekday
+  payroll_semimonthly_day Int?            // semi-monthly split day (1–28); period 1 = 1..day, period 2 = day+1..EOM
+  payroll_monthly_start_day Int?          // monthly boundary day (1–28); 1 = calendar month, else startDay..(startDay-1 next month)
   is_demo                 Boolean         @default(false)
   onboarding_step         String          @default("company")
   onboarding_completed_at DateTime?       @db.Timestamptz(6)
@@ -564,6 +640,7 @@ model organizations {
   project_assignments   project_assignments[]
   entry_templates       entry_templates[]
   timesheet_periods     timesheet_periods[]
+  project_timesheet_periods project_timesheet_periods[]
   time_entries          time_entries[]
   approvals             approvals[]
   audit_history         audit_history[]

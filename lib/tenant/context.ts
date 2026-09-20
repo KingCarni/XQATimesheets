@@ -74,7 +74,7 @@ export async function getRequestHost(): Promise<string | null> {
 
 /**
  * Resolve the organization implied by the request hostname:
- *  - a `<slug>.hourops.ca` / `<slug>.localhost` subdomain, or
+ *  - a `<slug>.myhourvault.com` / `<slug>.localhost` subdomain, or
  *  - a full custom hostname registered in `organization_domains`.
  * Returns null for the platform root or an unknown host.
  */

@@ -23,6 +23,7 @@ export type NewEntryInput = z.infer<typeof newEntrySchema>;
 
 export const editEntrySchema = z.object({
   id: uuid,
+  entryDate: dateStr.optional(),
   projectId: uuid.nullable().optional(),
   platformId: uuid.nullable().optional(),
   activityTypeId: uuid.optional(),

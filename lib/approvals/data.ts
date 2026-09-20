@@ -1,9 +1,12 @@
 import "server-only";
 
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { getReviewableProfileIds } from "@/lib/auth/authorization";
 import type { CurrentUser } from "@/lib/auth/session";
 import { dateOnly, decimal, timestamp } from "@/lib/timesheets/queries";
+import { decodePeriodRef, encodePeriodRef } from "@/lib/timesheets/period-ref";
 import type { PtoStatus, TimesheetStatus } from "@/types/domain";
 
 /* ------------------------------------------------------------------ */
@@ -46,59 +49,122 @@ export type ReviewDetailDto = {
  * is project-scoped), and this re-scopes defensively to the reviewer's
  * reviewable profiles so a forged id can't leak another team's timesheet.
  */
+const ENTRY_INCLUDE = {
+  include: { project: true, platform: true, activity_type: true },
+  orderBy: [{ entry_date: "asc" as const }, { created_at: "asc" as const }],
+};
+const APPROVAL_INCLUDE = {
+  include: { actor: { include: { employee_profile: true } } },
+  orderBy: { created_at: "asc" as const },
+};
+
+type RawEntry = {
+  id: string;
+  entry_date: Date;
+  project: { name: string } | null;
+  platform: { name: string } | null;
+  activity_type: { name: string };
+  hours: Prisma.Decimal;
+  description: string;
+};
+type RawApproval = {
+  id: string;
+  action: string;
+  comment: string | null;
+  created_at: Date;
+  actor: { email: string; employee_profile: { full_name: string } | null };
+};
+
+function mapEntries(entries: RawEntry[]): ReviewEntryDto[] {
+  return entries.map((entry) => ({
+    id: entry.id,
+    date: dateOnly(entry.entry_date),
+    project: entry.project?.name ?? "No project",
+    platform: entry.platform?.name ?? "Any",
+    workType: entry.activity_type.name,
+    hours: decimal(entry.hours),
+    description: entry.description,
+  }));
+}
+function mapHistory(approvals: RawApproval[]): ReviewHistoryDto[] {
+  return approvals.map((a) => ({
+    id: a.id,
+    action: a.action,
+    actor: a.actor.employee_profile?.full_name ?? a.actor.email,
+    at: timestamp(a.created_at),
+    comment: a.comment,
+  }));
+}
+
+/**
+ * Review detail for a set of already-authorized period refs. Handles both
+ * operational project periods ("project:<id>") and legacy weekly periods
+ * ("legacy:<id>"). Re-scopes defensively to the reviewer's reviewable profiles
+ * so a forged id can't leak another team's timesheet. Keyed by the same refs.
+ */
 export async function getReviewDetailsMap(
   viewer: CurrentUser,
-  periodIds: string[],
+  periodRefs: string[],
   organizationId: string,
 ): Promise<Record<string, ReviewDetailDto>> {
-  if (periodIds.length === 0) return {};
+  if (periodRefs.length === 0) return {};
   const reviewableIds = await getReviewableProfileIds(viewer, organizationId);
+  const employeeScope = reviewableIds ? { employee_profile_id: { in: reviewableIds } } : {};
 
-  const periods = await prisma.timesheet_periods.findMany({
-    where: {
-      id: { in: periodIds },
-      organization_id: organizationId,
-      ...(reviewableIds ? { employee_profile_id: { in: reviewableIds } } : {}),
-    },
-    include: {
-      employee_profile: { select: { full_name: true } },
-      time_entries: {
-        include: { project: true, platform: true, activity_type: true },
-        orderBy: [{ entry_date: "asc" }, { created_at: "asc" }],
-      },
-      approvals: {
-        include: { actor: { include: { employee_profile: true } } },
-        orderBy: { created_at: "asc" },
-      },
-    },
-  });
+  const decoded = periodRefs.map(decodePeriodRef);
+  const projectIds = decoded.filter((d) => d.kind === "project").map((d) => d.id);
+  const legacyIds = decoded.filter((d) => d.kind === "legacy").map((d) => d.id);
+
+  const [projectPeriods, legacyPeriods] = await Promise.all([
+    projectIds.length
+      ? prisma.project_timesheet_periods.findMany({
+          where: { id: { in: projectIds }, organization_id: organizationId, ...employeeScope },
+          include: {
+            employee_profile: { select: { full_name: true } },
+            time_entries: ENTRY_INCLUDE,
+            approvals: APPROVAL_INCLUDE,
+          },
+        })
+      : Promise.resolve([]),
+    legacyIds.length
+      ? prisma.timesheet_periods.findMany({
+          where: { id: { in: legacyIds }, organization_id: organizationId, ...employeeScope },
+          include: {
+            employee_profile: { select: { full_name: true } },
+            time_entries: ENTRY_INCLUDE,
+            approvals: APPROVAL_INCLUDE,
+          },
+        })
+      : Promise.resolve([]),
+  ]);
 
   const map: Record<string, ReviewDetailDto> = {};
-  for (const period of periods) {
-    map[period.id] = {
-      id: period.id,
-      employeeName: period.employee_profile.full_name,
-      weekStart: dateOnly(period.week_start_date),
-      weekEnd: dateOnly(period.week_end_date),
-      totalHours: decimal(period.total_hours),
-      status: period.status,
-      rejectionReason: period.rejection_reason,
-      entries: period.time_entries.map((entry) => ({
-        id: entry.id,
-        date: dateOnly(entry.entry_date),
-        project: entry.project?.name ?? "No project",
-        platform: entry.platform?.name ?? "Any",
-        workType: entry.activity_type.name,
-        hours: decimal(entry.hours),
-        description: entry.description,
-      })),
-      history: period.approvals.map((a) => ({
-        id: a.id,
-        action: a.action,
-        actor: a.actor.employee_profile?.full_name ?? a.actor.email,
-        at: timestamp(a.created_at),
-        comment: a.comment,
-      })),
+  for (const p of projectPeriods) {
+    const ref = encodePeriodRef("project", p.id);
+    map[ref] = {
+      id: ref,
+      employeeName: p.employee_profile.full_name,
+      weekStart: dateOnly(p.period_start_date),
+      weekEnd: dateOnly(p.period_end_date),
+      totalHours: p.time_entries.reduce((s, e) => s + decimal(e.hours), 0),
+      status: p.status,
+      rejectionReason: p.rejection_reason,
+      entries: mapEntries(p.time_entries),
+      history: mapHistory(p.approvals),
+    };
+  }
+  for (const p of legacyPeriods) {
+    const ref = encodePeriodRef("legacy", p.id);
+    map[ref] = {
+      id: ref,
+      employeeName: p.employee_profile.full_name,
+      weekStart: dateOnly(p.week_start_date),
+      weekEnd: dateOnly(p.week_end_date),
+      totalHours: decimal(p.total_hours),
+      status: p.status,
+      rejectionReason: p.rejection_reason,
+      entries: mapEntries(p.time_entries),
+      history: mapHistory(p.approvals),
     };
   }
   return map;
