@@ -26,12 +26,19 @@ export function AddEntryForm({
   catalogs,
   initial,
   onAdded,
+  lockedProjectId,
 }: {
   weekStart: DateStr;
   entryDate: DateStr;
   catalogs: Catalogs;
   initial?: EntryPrefill;
   onAdded: (e: Entry) => void;
+  /**
+   * When set, the entry is fixed to this project (the project selector is hidden).
+   * Used by the operational per-project sections so a new entry always lands in
+   * the section's own project pay period.
+   */
+  lockedProjectId?: string;
 }) {
   const firstActivity = catalogs.activityTypes[0]?.id ?? "";
   // Project defaulting: when the employee has exactly one active project it is
@@ -40,7 +47,7 @@ export function AddEntryForm({
   // always wins. The employee can still switch to any project they're
   // authorized to use (the server re-checks authorization on save).
   const defaultProjectId =
-    initial?.projectId ?? (catalogs.projects.length === 1 ? catalogs.projects[0].id : "");
+    lockedProjectId ?? initial?.projectId ?? (catalogs.projects.length === 1 ? catalogs.projects[0].id : "");
   const [projectId, setProjectId] = useState(defaultProjectId);
   const [platformId, setPlatformId] = useState(initial?.platformId ?? "");
   const [activityId, setActivityId] = useState(initial?.activityId ?? firstActivity);
@@ -95,14 +102,20 @@ export function AddEntryForm({
   return (
     <div className="mt-3 min-w-[880px] rounded-xl border border-dashed border-border bg-muted/45 p-3 lg:min-w-0">
       <div className="grid grid-cols-[1.4fr_1fr_1.4fr_0.6fr_2fr] gap-2">
-        <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-          <option value="">— No project —</option>
-          {catalogs.projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </Select>
+        {lockedProjectId ? (
+          <div className="flex h-9 items-center rounded-md border border-border bg-muted/60 px-3 text-sm text-muted-foreground">
+            {catalogs.projects.find((p) => p.id === lockedProjectId)?.name ?? "This project"}
+          </div>
+        ) : (
+          <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <option value="">— No project —</option>
+            {catalogs.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+        )}
         <Select
           value={platformId}
           onChange={(e) => setPlatformId(e.target.value)}

@@ -144,6 +144,7 @@ export async function getProjectReport(
           platform: { select: { name: true } },
           activity_type: { select: { name: true } },
           timesheet_period: { select: { status: true } },
+          project_period: { select: { status: true } },
         },
         orderBy: [{ entry_date: "asc" }, { created_at: "asc" }],
       }),
@@ -226,7 +227,9 @@ export async function getProjectReport(
     workType: e.activity_type.name,
     hours: decimal(e.hours),
     description: e.description,
-    status: e.timesheet_period.status,
+    // Legacy weekly status; entries on the new operational workflow fall back to
+    // "open" until project-report moves to operational periods (MHV-5/9).
+    status: e.project_period?.status ?? e.timesheet_period?.status ?? "open",
   }));
 
   return {

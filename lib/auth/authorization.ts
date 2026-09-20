@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { isPeriodEditable, type AppRole } from "@/types/domain";
+import { decodePeriodRef, type PeriodKind } from "@/lib/timesheets/period-ref";
 import type { CurrentUser } from "./session";
 
 /**
@@ -147,7 +148,7 @@ export async function assertCanReviewProfile(viewer: CurrentUser, profileId: str
   }
 }
 
-/** Verify a period belongs to this org AND the viewer may review it. */
+/** Verify a legacy weekly period belongs to this org AND the viewer may review it. */
 export async function assertCanReviewPeriod(viewer: CurrentUser, periodId: string, organizationId: string) {
   const period = await prisma.timesheet_periods.findFirst({
     where: { id: periodId, organization_id: organizationId },
@@ -156,6 +157,65 @@ export async function assertCanReviewPeriod(viewer: CurrentUser, periodId: strin
   if (!period) throw new Error("Timesheet period not found.");
   await assertCanReviewProfile(viewer, period.employee_profile_id, organizationId);
   return period;
+}
+
+/** Whether the viewer leads/manages a specific project in this org. */
+export async function managesProject(
+  viewer: CurrentUser,
+  projectId: string,
+  organizationId: string,
+): Promise<boolean> {
+  if (isAdmin(viewer.role)) return true;
+  if (!viewer.profile) return false;
+  const found = await prisma.project_assignments.findFirst({
+    where: {
+      employee_profile_id: viewer.profile.id,
+      project_id: projectId,
+      organization_id: organizationId,
+      is_active: true,
+      assignment_role: { in: ["lead", "manager"] },
+    },
+    select: { id: true },
+  });
+  return Boolean(found);
+}
+
+export type ReviewablePeriodRef = {
+  kind: PeriodKind;
+  id: string;
+  employee_profile_id: string;
+  project_id: string | null;
+};
+
+/**
+ * Verify a period REF (project or legacy) belongs to this org AND the viewer may
+ * review it. Project periods require the reviewer to lead/manage THAT project
+ * (or be an admin); legacy periods use the employee-scoped review rule.
+ */
+export async function assertCanReviewPeriodRef(
+  viewer: CurrentUser,
+  ref: string,
+  organizationId: string,
+): Promise<ReviewablePeriodRef> {
+  const { kind, id } = decodePeriodRef(ref);
+  if (kind === "project") {
+    const period = await prisma.project_timesheet_periods.findFirst({
+      where: { id, organization_id: organizationId },
+      select: { employee_profile_id: true, project_id: true },
+    });
+    if (!period) throw new Error("Timesheet period not found.");
+    if (!(await managesProject(viewer, period.project_id, organizationId))) {
+      throw new Error("You are not authorized to review this project.");
+    }
+    return { kind, id, employee_profile_id: period.employee_profile_id, project_id: period.project_id };
+  }
+  const period = await prisma.timesheet_periods.findFirst({
+    where: { id, organization_id: organizationId },
+    select: { employee_profile_id: true },
+  });
+  if (!period) throw new Error("Timesheet period not found.");
+  await assertCanReviewProfile(viewer, period.employee_profile_id, organizationId);
+  return { kind, id, employee_profile_id: period.employee_profile_id, project_id: null };
 }
 
 /** Verify an entry is the viewer's own, in this org, and its period editable. */
@@ -168,11 +228,18 @@ export async function assertOwnEditableEntry(
 
   const entry = await prisma.time_entries.findFirst({
     where: { id: entryId, employee_profile_id: user.profile.id, organization_id: organizationId },
-    include: { timesheet_period: { select: { status: true } } },
+    include: {
+      timesheet_period: { select: { status: true } },
+      project_period: { select: { status: true } },
+    },
   });
 
   if (!entry) throw new Error("Time entry not found.");
-  if (!isPeriodEditable(entry.timesheet_period.status)) {
+  // Editability is governed by the entry's operational (project) period when it
+  // has one; entries still on the legacy weekly workflow use that period. An
+  // entry with neither is a fresh/open entry and is editable.
+  const governingStatus = entry.project_period?.status ?? entry.timesheet_period?.status ?? null;
+  if (governingStatus && !isPeriodEditable(governingStatus)) {
     throw new Error("This timesheet period is locked.");
   }
 

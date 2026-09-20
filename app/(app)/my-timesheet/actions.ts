@@ -13,13 +13,16 @@ import {
   type NewEntryInput,
   type EditEntryInput,
 } from "@/lib/timesheets/schema";
-import { getOrCreatePeriod, toEntryRow } from "@/lib/timesheets/queries";
+import { getOrCreatePeriod, toEntryRow, dateOnly } from "@/lib/timesheets/queries";
 import { getWeekRange, shiftWeek, toDateStr, fromDateStr, type DateStr } from "@/lib/timesheets/week";
 import { isPeriodEditable } from "@/types/domain";
 import {
   validateWeekForSubmission,
   type WeekSubmissionValidation,
 } from "@/lib/timesheets/validation";
+import { ensureOperationalPeriodForEntry } from "@/lib/pay-periods/operational";
+import { getEffectivePayPeriodConfigForProject } from "@/lib/pay-periods/queries";
+import { getPayPeriodForDate } from "@/lib/pay-periods/calc";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -35,6 +38,38 @@ async function context() {
     throw new Error("Your profile does not belong to this organization.");
   }
   return { user, profile: user.profile, organizationId: organization.id };
+}
+
+type Ctx = Awaited<ReturnType<typeof context>>;
+
+/**
+ * Resolve which workflow unit an entry at (project, date) belongs to:
+ *  - WITH a project → its operational project period (`project_period_id`),
+ *    created lazily; boundaries come from the project's effective config.
+ *  - WITHOUT a project → the legacy weekly period (`timesheet_period_id`), the
+ *    "General (no project)" bucket. We never force a project onto such entries.
+ * Exactly one id is returned non-null. Throws if the target period is locked.
+ */
+async function resolveEntryAssociation(params: {
+  profile: Ctx["profile"];
+  organizationId: string;
+  projectId: string | null;
+  entryDate: DateStr;
+}): Promise<{ project_period_id: string | null; timesheet_period_id: string | null }> {
+  const { profile, organizationId, projectId, entryDate } = params;
+  if (projectId) {
+    const period = await ensureOperationalPeriodForEntry({
+      organizationId,
+      employeeProfileId: profile.id,
+      projectId,
+      entryDate,
+    });
+    if (!period.editable) throw new Error("This project pay period is locked.");
+    return { project_period_id: period.id, timesheet_period_id: null };
+  }
+  const legacy = await getOrCreatePeriod(profile, getWeekRange(entryDate).start, organizationId);
+  if (!isPeriodEditable(legacy.status)) throw new Error("This timesheet period is locked.");
+  return { project_period_id: null, timesheet_period_id: legacy.id };
 }
 
 function dateInput(value: DateStr): Date {
@@ -108,14 +143,18 @@ export async function addEntry(input: NewEntryInput): Promise<ActionResult<Entry
       activityTypeId: data.activityTypeId,
     });
 
-    const period = await getOrCreatePeriod(profile, data.weekStart, organizationId);
-    if (!isPeriodEditable(period.status)) throw new Error("This timesheet period is locked.");
+    const association = await resolveEntryAssociation({
+      profile,
+      organizationId,
+      projectId: data.projectId ?? null,
+      entryDate: data.entryDate,
+    });
 
     const row = await prisma.time_entries.create({
       data: {
         employee_profile_id: profile.id,
         organization_id: organizationId,
-        timesheet_period_id: period.id,
+        ...association,
         entry_date: dateInput(data.entryDate),
         project_id: data.projectId ?? null,
         platform_id: data.platformId ?? null,
@@ -143,7 +182,9 @@ export async function editEntry(input: EditEntryInput): Promise<ActionResult<Ent
 
   try {
     const { user, profile, organizationId } = await context();
-    await assertOwnEditableEntry(user, id, organizationId);
+    // Verifies ownership + that the entry's CURRENT governing period is editable
+    // (a submitted/approved/locked entry can't be moved out of its period).
+    const entry = await assertOwnEditableEntry(user, id, organizationId);
     await validateEntryCatalog({
       profileId: profile.id,
       organizationId,
@@ -152,15 +193,32 @@ export async function editEntry(input: EditEntryInput): Promise<ActionResult<Ent
       activityTypeId: patch.activityTypeId,
     });
 
+    const currentProjectId = entry.project_id ?? null;
+    const currentDate = dateOnly(entry.entry_date);
+    const nextProjectId = patch.projectId !== undefined ? patch.projectId ?? null : currentProjectId;
+    const nextDate = patch.entryDate ?? currentDate;
+
+    // Re-resolve the operational unit only when project or date changed. Crossing
+    // a project or a pay-period boundary re-points the entry to the correct
+    // project period (or the legacy General bucket); the target must be editable.
+    const projectChanged = patch.projectId !== undefined && nextProjectId !== currentProjectId;
+    const dateChanged = patch.entryDate !== undefined && patch.entryDate !== currentDate;
+    const association =
+      projectChanged || dateChanged
+        ? await resolveEntryAssociation({ profile, organizationId, projectId: nextProjectId, entryDate: nextDate })
+        : null;
+
     const row = await prisma.time_entries.update({
       where: { id },
       data: {
         updated_by: user.id,
+        ...(patch.entryDate !== undefined ? { entry_date: dateInput(patch.entryDate) } : {}),
         ...(patch.projectId !== undefined ? { project_id: patch.projectId } : {}),
         ...(patch.platformId !== undefined ? { platform_id: patch.platformId } : {}),
         ...(patch.activityTypeId !== undefined ? { activity_type_id: patch.activityTypeId } : {}),
         ...(patch.hours !== undefined ? { hours: patch.hours } : {}),
         ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(association ?? {}),
       },
     });
 
@@ -249,14 +307,31 @@ export async function submitWeek(
   }
 }
 
-function cloneRows(
-  source: Entry[],
-  opts: { profileId: string; periodId: string; userId: string; entryDate: DateStr; organizationId: string },
+/**
+ * Build the insert payload for one copied entry, resolving its operational
+ * association fresh from (project, target date) — we NEVER carry the source
+ * entry's project_period_id/timesheet_period_id. Returns null when the target
+ * period is locked, so that row is skipped instead of failing the whole copy.
+ */
+async function buildCopyRow(
+  e: Entry,
+  opts: { profile: Ctx["profile"]; userId: string; entryDate: DateStr; organizationId: string },
 ) {
-  return source.map((e) => ({
-    employee_profile_id: opts.profileId,
+  let association: { project_period_id: string | null; timesheet_period_id: string | null };
+  try {
+    association = await resolveEntryAssociation({
+      profile: opts.profile,
+      organizationId: opts.organizationId,
+      projectId: e.project_id,
+      entryDate: opts.entryDate,
+    });
+  } catch {
+    return null; // target period locked → skip this row
+  }
+  return {
+    employee_profile_id: opts.profile.id,
     organization_id: opts.organizationId,
-    timesheet_period_id: opts.periodId,
+    ...association,
     entry_date: dateInput(opts.entryDate),
     project_id: e.project_id,
     platform_id: e.platform_id,
@@ -266,12 +341,14 @@ function cloneRows(
     source: "copy",
     created_by: opts.userId,
     updated_by: opts.userId,
-  }));
+  };
 }
+
+type CopyRow = NonNullable<Awaited<ReturnType<typeof buildCopyRow>>>;
 
 /** Copy every entry from the day before `targetDate` onto `targetDate`. */
 export async function copyPreviousDay(
-  weekStart: DateStr,
+  _weekStart: DateStr,
   targetDate: DateStr,
 ): Promise<ActionResult<Entry[]>> {
   try {
@@ -283,19 +360,14 @@ export async function copyPreviousDay(
     });
     if (prev.length === 0) return { ok: true, data: [] };
 
-    const period = await getOrCreatePeriod(profile, weekStart, organizationId);
-    if (!isPeriodEditable(period.status)) throw new Error("This timesheet period is locked.");
+    const rows: CopyRow[] = [];
+    for (const e of prev.map(toEntryRow)) {
+      const row = await buildCopyRow(e, { profile, userId: user.id, entryDate: targetDate, organizationId });
+      if (row) rows.push(row);
+    }
+    if (rows.length === 0) return { ok: true, data: [] };
 
-    const inserted = await prisma.time_entries.createManyAndReturn({
-      data: cloneRows(prev.map(toEntryRow), {
-        profileId: profile.id,
-        periodId: period.id,
-        userId: user.id,
-        entryDate: targetDate,
-        organizationId,
-      }),
-    });
-
+    const inserted = await prisma.time_entries.createManyAndReturn({ data: rows });
     revalidatePath("/my-timesheet");
     return { ok: true, data: inserted.map(toEntryRow) };
   } catch (e) {
@@ -321,26 +393,107 @@ export async function copyPreviousWeek(weekStart: DateStr): Promise<ActionResult
     ).map(toEntryRow);
     if (prev.length === 0) return { ok: true, data: [] };
 
-    const period = await getOrCreatePeriod(profile, weekStart, organizationId);
-    if (!isPeriodEditable(period.status)) throw new Error("This timesheet period is locked.");
-
-    const rows = prev.map((e) => {
+    const rows: CopyRow[] = [];
+    for (const e of prev) {
       const idx = prevWeek.days.indexOf(e.entry_date);
       const entryDate = thisWeek.days[idx] ?? thisWeek.days[0];
-      return cloneRows([e], {
-        profileId: profile.id,
-        periodId: period.id,
-        userId: user.id,
-        entryDate,
-        organizationId,
-      })[0];
-    });
+      const row = await buildCopyRow(e, { profile, userId: user.id, entryDate, organizationId });
+      if (row) rows.push(row);
+    }
+    if (rows.length === 0) return { ok: true, data: [] };
 
     const inserted = await prisma.time_entries.createManyAndReturn({ data: rows });
-
     revalidatePath("/my-timesheet");
     return { ok: true, data: inserted.map(toEntryRow) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not copy week" };
+  }
+}
+
+/**
+ * Submit ONE project pay period for the current employee. Scoped strictly to
+ * (employee, project, period): only that project's in-range entries are frozen,
+ * and submitting Project A never touches Project B. Server-authoritative.
+ */
+export async function submitProjectPeriod(
+  projectId: string,
+  periodStart: DateStr,
+): Promise<ActionResult<{ status: "submitted"; totalHours: number }>> {
+  try {
+    const { user, profile, organizationId } = await context();
+
+    // Resolve the project's effective config and the exact period for the start.
+    const ctx = await getEffectivePayPeriodConfigForProject(organizationId, projectId);
+    const period = getPayPeriodForDate(ctx.config, periodStart);
+
+    // Ensure the operational row exists (boundaries frozen on create).
+    const opened = await ensureOperationalPeriodForEntry({
+      organizationId,
+      employeeProfileId: profile.id,
+      projectId,
+      entryDate: period.start,
+    });
+
+    // In-range entries for THIS project only — the submission block.
+    const entries = await prisma.time_entries.findMany({
+      where: {
+        employee_profile_id: profile.id,
+        organization_id: organizationId,
+        project_id: projectId,
+        entry_date: { gte: dateInput(period.start), lte: dateInput(period.end) },
+      },
+      select: { id: true, hours: true, project_period_id: true },
+    });
+    if (entries.length === 0) throw new Error("There are no entries to submit for this period.");
+
+    const total = entries.reduce((sum, e) => sum + e.hours.toNumber(), 0);
+
+    await prisma.$transaction(async (tx) => {
+      // Migrate any legacy / mis-pointed entries onto this operational row.
+      const toRepoint = entries.filter((e) => e.project_period_id !== opened.id).map((e) => e.id);
+      if (toRepoint.length) {
+        await tx.time_entries.updateMany({
+          where: { id: { in: toRepoint } },
+          data: { project_period_id: opened.id, timesheet_period_id: null },
+        });
+      }
+      const updated = await tx.project_timesheet_periods.updateMany({
+        where: {
+          id: opened.id,
+          organization_id: organizationId,
+          employee_profile_id: profile.id,
+          project_id: projectId,
+          status: { in: ["open", "rejected"] },
+        },
+        data: { status: "submitted", submitted_at: new Date(), submitted_by: user.id, rejection_reason: null },
+      });
+      if (updated.count !== 1) throw new Error("This period is no longer submit-ready.");
+
+      await tx.approvals.create({
+        data: {
+          project_period_id: opened.id,
+          actor_user_id: user.id,
+          action: "submit",
+          comment: `Submitted ${total}h.`,
+          organization_id: organizationId,
+        },
+      });
+      await tx.audit_history.create({
+        data: {
+          entity_type: "project_timesheet_period",
+          entity_id: opened.id,
+          action: "submit",
+          actor_user_id: user.id,
+          metadata: { projectId, periodStart: period.start, periodEnd: period.end, totalHours: total },
+          organization_id: organizationId,
+        },
+      });
+    });
+
+    revalidatePath("/my-timesheet");
+    revalidatePath("/approvals");
+    return { ok: true, data: { status: "submitted", totalHours: total } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not submit period" };
   }
 }

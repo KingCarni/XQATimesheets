@@ -12,7 +12,7 @@ import {
   saveCompanyDetails,
   setOnboardingStep,
 } from "@/lib/onboarding/mutations";
-import { APP_ROLES, PAYROLL_PERIODS, type AppRole, type PayrollPeriod } from "@/types/domain";
+import { APP_ROLES, type AppRole } from "@/types/domain";
 
 export type SimpleState = { error: string | null };
 
@@ -22,16 +22,11 @@ const MAX_LOGO_BYTES = 1024 * 1024; // 1 MB
 /** Step 1 → 2: save company details, advance to branding. */
 export async function saveCompanyStep(_prev: SimpleState, formData: FormData): Promise<SimpleState> {
   const { organization } = await requireWritableOrganizationAdmin();
-  const payrollRaw = String(formData.get("payrollPeriod") ?? "");
-  const payrollPeriod: PayrollPeriod | null =
-    (PAYROLL_PERIODS as readonly string[]).includes(payrollRaw) ? (payrollRaw as PayrollPeriod) : null;
 
   try {
     await saveCompanyDetails(organization.id, {
       name: String(formData.get("name") ?? ""),
       timezone: String(formData.get("timezone") ?? ""),
-      weekStart: Number(formData.get("weekStart") ?? 1),
-      payrollPeriod,
     });
     await setOnboardingStep(organization.id, "branding");
   } catch (e) {

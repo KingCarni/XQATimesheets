@@ -541,3 +541,30 @@ export function fieldValuesToConfig(v: PayPeriodFieldValues): PayPeriodConfig {
 export function fieldValuesSignature(v: PayPeriodFieldValues): string {
   return `${v.cadence}|${v.startWeekday}|${v.anchor}|${v.splitDay}|${v.monthlyStartDay}`;
 }
+
+// ------------------------------------------- operational submission units (MHV-8 follow-up)
+//
+// The operational submission unit is the block an employee actually submits and a
+// manager actually approves: employee + project + effective pay period. Its
+// boundaries are derived PURELY from the project's effective config and the
+// entry's own calendar date, then PERSISTED on the workflow row and frozen. This
+// function is the single mapping from "an entry's project + date" to "which
+// submission block it belongs to"; the server persists/looks up the row keyed by
+// (employee, project, start).
+
+/** Resolve the operational pay period an entry belongs to (project config + entry date). */
+export function resolveOperationalPeriod(config: PayPeriodConfig, entryDate: DateStr): PayPeriod {
+  return getPayPeriodForDate(config, entryDate);
+}
+
+/**
+ * Whether an entry currently sitting in the period starting `currentStart` should
+ * be re-pointed to the freshly resolved `resolvedStart` after a project or date
+ * change. Identity is the start date, so any change of start means a different
+ * unit. Callers must additionally refuse to move an entry OUT of a frozen
+ * (submitted/approved/locked) period — that guard lives with the status rules in
+ * `types/domain.ts` (`isPeriodEditable`), not here.
+ */
+export function operationalPeriodMoved(currentStart: DateStr, resolvedStart: DateStr): boolean {
+  return currentStart !== resolvedStart;
+}

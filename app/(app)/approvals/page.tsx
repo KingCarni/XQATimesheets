@@ -1,6 +1,6 @@
 import { requireOrganizationReviewer } from "@/lib/tenant/context";
 import { isAdmin } from "@/lib/auth/authorization";
-import { getApprovalQueue, getProjectsForReviewFilters, periodSummary } from "@/lib/timesheets/review";
+import { getApprovalQueue, getProjectsForReviewFilters } from "@/lib/timesheets/review";
 import {
   getAllTimeOffTypes,
   getReviewDetailsMap,
@@ -39,7 +39,7 @@ export default async function ApprovalsPage({
     status: params.status ?? "submitted",
   };
 
-  const [periods, projects, timeOffGroups, hardwareRequests, timeOffTypes] = await Promise.all([
+  const [rows, projects, timeOffGroups, hardwareRequests, timeOffTypes] = await Promise.all([
     getApprovalQueue(viewer, params, orgId),
     getProjectsForReviewFilters(viewer, orgId),
     getTimeOffReviewGroups(viewer, orgId),
@@ -47,7 +47,6 @@ export default async function ApprovalsPage({
     admin ? getAllTimeOffTypes(orgId) : Promise.resolve([]),
   ]);
 
-  const rows = periods.map(periodSummary);
   const details = await getReviewDetailsMap(viewer, rows.map((r) => r.id), orgId);
 
   return (
