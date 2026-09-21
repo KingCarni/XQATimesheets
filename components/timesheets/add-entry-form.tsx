@@ -10,6 +10,10 @@ import { addEntry } from "@/app/(app)/my-timesheet/actions";
 import type { Row } from "@/types/database";
 import type { Catalogs } from "./entry-row";
 import type { DateStr } from "@/lib/timesheets/week";
+import {
+  firstIssueMessage,
+  validateEntryCompleteness,
+} from "@/lib/timesheets/entry-validation";
 
 type Entry = Row<"time_entries">;
 
@@ -71,13 +75,24 @@ export function AddEntryForm({
 
   function submit(addAnother: boolean) {
     setError(null);
-    if (!activityId) {
-      setError("Select a work type");
-      return;
-    }
     const parsedHours = Number(hours);
-    if (!Number.isFinite(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
-      setError("Enter hours between 0 and 24");
+    // Canonical MHV-11 rules — same helper the server enforces. Blocks 0-hour /
+    // missing-work-type / missing-required-platform saves inline (user input is
+    // preserved on failure — no reset, no navigation).
+    const completeness = validateEntryCompleteness(
+      {
+        entryDate,
+        hours: hours === "" ? null : parsedHours,
+        activityTypeId: activityId,
+        projectId: projectId || null,
+        platformId: platformId || null,
+      },
+      selectedProject
+        ? { requiresPlatform: Boolean(selectedProject.requires_platform) }
+        : null,
+    );
+    if (!completeness.ok) {
+      setError(firstIssueMessage(completeness));
       return;
     }
     startTransition(async () => {

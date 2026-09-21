@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { AlertTriangle, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,10 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { editEntry, removeEntry } from "@/app/(app)/my-timesheet/actions";
 import type { Row } from "@/types/database";
+import {
+  firstIssueMessage,
+  validateEntryCompleteness,
+} from "@/lib/timesheets/entry-validation";
 
 type Entry = Row<"time_entries">;
 
@@ -46,6 +50,29 @@ export function EntryRow({
   const selectedProject = catalogs.projects.find((p) => p.id === projectId);
   const platformRequired = Boolean(selectedProject?.requires_platform) && platformId === "";
 
+  // Canonical MHV-11 completeness: same rule the server uses to gate submit.
+  // When editable, this drives the "Needs attention" pill so legacy bad data
+  // (e.g. a historical row that predates a project's platform requirement) is
+  // visible and fixable in place, and blocks autosave of invalid intermediate
+  // state.
+  const completeness = useMemo(
+    () =>
+      validateEntryCompleteness(
+        {
+          entryDate: entry.entry_date,
+          hours,
+          activityTypeId: activityId,
+          projectId: projectId || null,
+          platformId: platformId || null,
+        },
+        selectedProject
+          ? { requiresPlatform: Boolean(selectedProject.requires_platform) }
+          : null,
+      ),
+    [entry.entry_date, hours, activityId, projectId, platformId, selectedProject],
+  );
+  const needsAttention = !completeness.ok;
+
   useEffect(() => {
     return () => {
       if (timer.current) clearTimeout(timer.current);
@@ -63,9 +90,29 @@ export function EntryRow({
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const parsedHours = Number(next.hours ?? hours);
-      if (!Number.isFinite(parsedHours) || parsedHours <= 0 || parsedHours > 24) {
+      const nextProjectId = (next.projectId ?? projectId) || null;
+      const nextPlatformId = (next.platformId ?? platformId) || null;
+      const nextActivityId = next.activityId ?? activityId;
+      // Guard the autosave with the canonical rules so we never persist an
+      // invalid intermediate row (e.g. mid-typed 0 hours, platform blank on a
+      // required project). Server re-validates; this just spares round-trips
+      // and keeps the row stable until the prospective values are complete.
+      const nextProject = catalogs.projects.find((p) => p.id === nextProjectId);
+      const completeness = validateEntryCompleteness(
+        {
+          entryDate: entry.entry_date,
+          hours: parsedHours,
+          activityTypeId: nextActivityId,
+          projectId: nextProjectId,
+          platformId: nextPlatformId,
+        },
+        nextProject
+          ? { requiresPlatform: Boolean(nextProject.requires_platform) }
+          : null,
+      );
+      if (!completeness.ok) {
         setState("error");
-        setError("Hours must be between 0 and 24");
+        setError(firstIssueMessage(completeness) ?? "Entry is incomplete.");
         return;
       }
       setState("saving");
@@ -185,6 +232,15 @@ export function EntryRow({
       />
 
       <div className="flex items-center gap-2">
+        {needsAttention && editable ? (
+          <span
+            className="bg-warning/15 text-warning inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+            title={firstIssueMessage(completeness) ?? "Entry is incomplete."}
+          >
+            <AlertTriangle className="h-3 w-3" />
+            Needs attention
+          </span>
+        ) : null}
         <StatusDot state={state} title={error ?? undefined} />
         {editable ? (
           <Button
