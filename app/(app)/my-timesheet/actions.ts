@@ -23,6 +23,10 @@ import {
 import { ensureOperationalPeriodForEntry } from "@/lib/pay-periods/operational";
 import { getEffectivePayPeriodConfigForProject } from "@/lib/pay-periods/queries";
 import { getPayPeriodForDate } from "@/lib/pay-periods/calc";
+import {
+  validateGeneralWeekForSubmission,
+  validateProjectPeriodForSubmission,
+} from "@/lib/timesheets/period-completeness";
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -261,6 +265,22 @@ export async function submitWeek(
     const validation = await validateWeekForSubmission(profile, weekStart, organizationId);
     if (!validation.ok) return { ok: false, error: "Week is incomplete." };
 
+    // MHV-11: row-completeness on every General entry in the week — reuses the
+    // same rules as add / edit. Legacy weekly submissions get the same gate.
+    const week = getWeekRange(weekStart);
+    const rowCompleteness = await validateGeneralWeekForSubmission({
+      organizationId,
+      employeeProfileId: profile.id,
+      weekStart: week.start,
+      weekEnd: week.end,
+    });
+    if (!rowCompleteness.ok) {
+      return {
+        ok: false,
+        error: rowCompleteness.summary ?? "This week contains incomplete entries.",
+      };
+    }
+
     const period = await getOrCreatePeriod(profile, weekStart, organizationId);
     if (period.status !== "open" && period.status !== "rejected") {
       throw new Error("Only open or rejected weeks can be submitted.");
@@ -445,6 +465,22 @@ export async function submitProjectPeriod(
       select: { id: true, hours: true, project_period_id: true },
     });
     if (entries.length === 0) throw new Error("There are no entries to submit for this period.");
+
+    // MHV-11: reject submission if ANY entry in the block fails row completeness.
+    // Never partial-submit. The period status is untouched until validation passes.
+    const completeness = await validateProjectPeriodForSubmission({
+      organizationId,
+      employeeProfileId: profile.id,
+      projectId,
+      periodStart: period.start,
+      periodEnd: period.end,
+    });
+    if (!completeness.ok) {
+      return {
+        ok: false,
+        error: completeness.summary ?? "This period contains incomplete entries.",
+      };
+    }
 
     const total = entries.reduce((sum, e) => sum + e.hours.toNumber(), 0);
 

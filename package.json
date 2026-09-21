@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:pay-periods": "node --test lib/pay-periods/calc.test.ts lib/pay-periods/operational.test.ts lib/timesheets/period-ref.test.ts lib/timesheets/summary.test.ts",
+    "test:pay-periods": "node --test lib/pay-periods/calc.test.ts lib/pay-periods/operational.test.ts lib/timesheets/period-ref.test.ts lib/timesheets/summary.test.ts lib/timesheets/entry-validation.test.ts lib/timesheets/period-completeness.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "provision:user": "node prisma/provision-user.mjs",
