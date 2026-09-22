@@ -113,6 +113,16 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
               Project report →
             </Button>
           </Link>
+          <Link href="/reports/monthly">
+            <Button type="button" variant="outline" size="sm">
+              Monthly timesheets →
+            </Button>
+          </Link>
+          <Link href="/reports/payroll">
+            <Button type="button" variant="outline" size="sm">
+              Payroll readiness →
+            </Button>
+          </Link>
           <a href={`/api/reports/export?${exportQuery}&format=csv`}>
             <Button type="button" variant="outline" size="sm">
               Export CSV
