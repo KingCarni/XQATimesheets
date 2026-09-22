@@ -96,6 +96,7 @@ enum audit_entity_type {
   organization_branding
   organization_domain
   invitation
+  notification
 }
 
 model users {
@@ -127,6 +128,7 @@ model users {
   created_leave_entitlements    leave_entitlements[]    @relation("entitlement_created_by")
   organization_members          organization_members[]
   created_invitations           invitations[]           @relation("invitation_created_by")
+  notifications                 notifications[]
 }
 
 model employee_profiles {
@@ -622,6 +624,10 @@ model organizations {
   payroll_anchor_date     DateTime?       @db.Date // biweekly cycle anchor; must fall on payroll_start_weekday
   payroll_semimonthly_day Int?            // semi-monthly split day (1–28); period 1 = 1..day, period 2 = day+1..EOM
   payroll_monthly_start_day Int?          // monthly boundary day (1–28); 1 = calendar month, else startDay..(startDay-1 next month)
+  // MHV-4 submission cutoff. Timezone comes from `timezone` above (no dup).
+  submission_cutoff_enabled     Boolean @default(false)
+  submission_cutoff_offset_days Int?    // 0..14 days after operational period end
+  submission_cutoff_time        String? // "HH:MM" 24h local time
   is_demo                 Boolean         @default(false)
   onboarding_step         String          @default("company")
   onboarding_completed_at DateTime?       @db.Timestamptz(6)
@@ -651,6 +657,7 @@ model organizations {
   equipment_assignments equipment_assignments[]
   hardware_requests     hardware_requests[]
   leave_entitlements    leave_entitlements[]
+  notifications         notifications[]
 }
 
 model organization_members {
@@ -713,4 +720,26 @@ model invitations {
 
   @@index([organization_id], map: "idx_invitations_org")
   @@index([email], map: "idx_invitations_email")
+}
+
+// MHV-3: reusable in-app notification. Delivery channels (email/push) will
+// consume the same rows later; producers write here via lib/notifications/service.
+model notifications {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String    @db.Uuid
+  user_id         String    @db.Uuid
+  type            String
+  title           String
+  message         String
+  href            String?
+  metadata        Json?
+  dedupe_key      String?
+  read_at         DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  organization organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  user         users         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, read_at, created_at(sort: Desc)], map: "idx_notifications_user_unread")
+  @@index([organization_id, created_at(sort: Desc)], map: "idx_notifications_org_created")
 }

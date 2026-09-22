@@ -201,6 +201,21 @@ function ProjectSectionCard({
           Changes requested: {section.rejectionReason}
         </p>
       ) : null}
+      {section.cutoff?.label ? (
+        section.cutoff.state === "overdue" ? (
+          <p className="border-b border-destructive/20 bg-destructive/8 px-4 py-2 text-sm font-medium text-destructive sm:px-5">
+            Submission overdue — was due {section.cutoff.label}
+          </p>
+        ) : section.cutoff.state === "due_soon" ? (
+          <p className="border-b border-warning/20 bg-warning/10 px-4 py-2 text-sm font-medium text-warning sm:px-5">
+            Due soon — submit by {section.cutoff.label}
+          </p>
+        ) : (
+          <p className="border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground sm:px-5">
+            Submit by {section.cutoff.label}
+          </p>
+        )
+      ) : null}
       {!section.editable && section.status !== "rejected" ? (
         <p className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground sm:px-5">
           <Lock className="h-4 w-4" /> This period is {section.status} and read-only.
@@ -523,6 +538,21 @@ function GeneralSectionCard({
         <p className="border-b border-destructive/20 bg-destructive/8 px-4 py-2 text-sm text-destructive sm:px-5">
           Changes requested: {general.rejectionReason}
         </p>
+      ) : null}
+      {general.cutoff?.label ? (
+        general.cutoff.state === "overdue" ? (
+          <p className="border-b border-destructive/20 bg-destructive/8 px-4 py-2 text-sm font-medium text-destructive sm:px-5">
+            Submission overdue — was due {general.cutoff.label}
+          </p>
+        ) : general.cutoff.state === "due_soon" ? (
+          <p className="border-b border-warning/20 bg-warning/10 px-4 py-2 text-sm font-medium text-warning sm:px-5">
+            Due soon — submit by {general.cutoff.label}
+          </p>
+        ) : (
+          <p className="border-b border-border bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground sm:px-5">
+            Submit by {general.cutoff.label}
+          </p>
+        )
       ) : null}
       {submitError ? (
         <p className="border-b border-destructive/20 bg-destructive/8 px-4 py-2 text-sm text-destructive sm:px-5">

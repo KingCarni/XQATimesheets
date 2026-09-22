@@ -64,7 +64,10 @@ export const authConfig = {
       // sign-in, company creation, the invitation acceptance flow (where the
       // account is created), and public org branding (logos on those pages).
       const publicPaths = ["/", "/login", "/signup", "/accept-invite", "/api/org-logo"];
-      const isPublic = publicPaths.includes(nextUrl.pathname);
+      // Vercel Cron endpoints authenticate via CRON_SECRET in the route
+      // handler itself; the session middleware must not intercept them.
+      const isCron = nextUrl.pathname.startsWith("/api/cron/");
+      const isPublic = publicPaths.includes(nextUrl.pathname) || isCron;
 
       if (isLoggedIn && (nextUrl.pathname === "/login" || nextUrl.pathname === "/signup")) {
         return Response.redirect(new URL("/my-timesheet", nextUrl));

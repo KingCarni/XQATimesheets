@@ -9,6 +9,8 @@ import { navItemsForRole } from "@/lib/permissions/routes";
 import { AppNav } from "@/components/shared/app-nav";
 import { OrgLogo } from "@/components/shared/org-logo";
 import { SignOutButton } from "@/components/shared/sign-out-button";
+import { NotificationBell } from "@/components/shared/notification-bell";
+import { unreadCount } from "@/lib/notifications/service";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, organization, membership } = await requireOrganizationContext();
@@ -29,6 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Apply the org's brand colours to the whole shell via CSS custom properties.
   const settings = await getOrganizationSettings(organization.id);
   const brandVars = brandingStyleVars(settings.primaryColor, settings.accentColor);
+  const notificationsUnread = await unreadCount(user.id, organization.id);
 
   return (
     <div className="min-h-full flex-1 md:flex" style={brandVars}>
@@ -53,6 +56,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <AppNav items={items} />
         </div>
         <div className="relative flex flex-col gap-3">
+          <NotificationBell unread={notificationsUnread} variant="sidebar" />
           <div className="rounded-xl border border-white/10 bg-white/6 p-3 text-sm shadow-lg shadow-black/20">
             <div className="flex items-center gap-3">
               <span className="bg-xqa-blue/20 text-xqa-blue-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10">
@@ -74,9 +78,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           imgClassName="h-8 w-auto max-w-[9rem]"
           textClassName="text-base text-white"
         />
-        <div className="min-w-0 text-right text-xs">
-          <p className="truncate font-semibold">{displayName}</p>
-          <p className="capitalize text-white/60">{roleLabel}</p>
+        <div className="flex items-center gap-3">
+          <NotificationBell unread={notificationsUnread} />
+          <div className="min-w-0 text-right text-xs">
+            <p className="truncate font-semibold">{displayName}</p>
+            <p className="capitalize text-white/60">{roleLabel}</p>
+          </div>
         </div>
       </header>
       <main className="flex-1 overflow-x-auto px-4 py-5 sm:px-6 md:p-8">

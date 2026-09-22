@@ -524,6 +524,30 @@ export async function submitProjectPeriod(
           organization_id: organizationId,
         },
       });
+
+      // MHV-3: notify authorized reviewers within the same transaction so
+      // submitted-state + notification never diverge on retry/rollback.
+      const project = await tx.projects.findFirst({
+        where: { id: projectId, organization_id: organizationId },
+        select: { name: true },
+      });
+      if (project) {
+        const { notifyProjectPeriodSubmitted } = await import("@/lib/notifications/producers");
+        await notifyProjectPeriodSubmitted(
+          {
+            organizationId,
+            periodId: opened.id,
+            employeeProfileId: profile.id,
+            projectId,
+            projectName: project.name,
+            employeeName: profile.full_name,
+            periodStart: period.start,
+            periodEnd: period.end,
+            actorUserId: user.id,
+          },
+          tx,
+        );
+      }
     });
 
     revalidatePath("/my-timesheet");

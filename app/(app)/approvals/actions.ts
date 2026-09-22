@@ -7,6 +7,7 @@ import { assertCanReviewPeriodRef } from "@/lib/auth/authorization";
 import { requireWritableOrganizationReviewer } from "@/lib/tenant/context";
 import { prisma } from "@/lib/prisma";
 import type { PeriodKind } from "@/lib/timesheets/period-ref";
+import { notifyPeriodApproved, notifyPeriodRejected } from "@/lib/notifications/producers";
 
 async function reviewerContext() {
   const { user, organization, membership } = await requireWritableOrganizationReviewer();
@@ -16,7 +17,9 @@ async function reviewerContext() {
 /**
  * Apply an approve/reject transition to one period (project or legacy) inside a
  * transaction: flip the status (only if still `submitted`), record an approval
- * row against the correct FK, and audit it. Returns whether it transitioned.
+ * row against the correct FK, audit it, and produce a notification back to
+ * the owning employee. All in the same transaction so notification/state stay
+ * consistent.
  */
 async function applyTransition(
   tx: Prisma.TransactionClient,
@@ -56,6 +59,33 @@ async function applyTransition(
         organization_id: organizationId,
       },
     });
+    // MHV-3 back-notification. Fetch minimal context for the message copy.
+    const period = await tx.project_timesheet_periods.findUnique({
+      where: { id: ref.id },
+      select: {
+        employee_profile_id: true,
+        period_start_date: true,
+        period_end_date: true,
+        project: { select: { name: true } },
+        employee_profile: { select: { full_name: true } },
+      },
+    });
+    if (period) {
+      const ctx = {
+        organizationId,
+        periodId: ref.id,
+        kind: "project" as const,
+        employeeProfileId: period.employee_profile_id,
+        employeeName: period.employee_profile.full_name,
+        projectId: "",
+        projectName: period.project.name,
+        periodStart: period.period_start_date.toISOString().slice(0, 10),
+        periodEnd: period.period_end_date.toISOString().slice(0, 10),
+        actorUserId,
+      };
+      if (action === "approve") await notifyPeriodApproved(ctx, tx);
+      else await notifyPeriodRejected({ ...ctx, reason: comment?.trim() ?? null }, tx);
+    }
     return true;
   }
 
@@ -83,6 +113,31 @@ async function applyTransition(
       organization_id: organizationId,
     },
   });
+  const legacy = await tx.timesheet_periods.findUnique({
+    where: { id: ref.id },
+    select: {
+      employee_profile_id: true,
+      week_start_date: true,
+      week_end_date: true,
+      employee_profile: { select: { full_name: true } },
+    },
+  });
+  if (legacy) {
+    const ctx = {
+      organizationId,
+      periodId: ref.id,
+      kind: "legacy" as const,
+      employeeProfileId: legacy.employee_profile_id,
+      employeeName: legacy.employee_profile.full_name,
+      projectId: "",
+      projectName: "General",
+      periodStart: legacy.week_start_date.toISOString().slice(0, 10),
+      periodEnd: legacy.week_end_date.toISOString().slice(0, 10),
+      actorUserId,
+    };
+    if (action === "approve") await notifyPeriodApproved(ctx, tx);
+    else await notifyPeriodRejected({ ...ctx, reason: comment?.trim() ?? null }, tx);
+  }
   return true;
 }
 

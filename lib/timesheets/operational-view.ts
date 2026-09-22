@@ -14,6 +14,7 @@ import {
   type PayPeriodConfig,
 } from "@/lib/pay-periods/calc";
 import { getEffectiveConfigsForProjects } from "@/lib/pay-periods/queries";
+import { formatCutoffForOrg, getCutoffState, getSubmissionCutoff } from "@/lib/pay-periods/cutoff";
 import {
   dateInput,
   decimal,
@@ -43,6 +44,12 @@ export type ProjectPeriodNav = {
   isCurrent: boolean;
 };
 
+export type CutoffMeta = {
+  /** null when cutoff is disabled OR status is not_actionable */
+  label: string | null;
+  state: "disabled" | "upcoming" | "due_soon" | "overdue" | "not_actionable";
+};
+
 export type ProjectPeriodSection = {
   projectId: string;
   projectName: string;
@@ -61,6 +68,7 @@ export type ProjectPeriodSection = {
   rejectionReason: string | null;
   /** The persisted operational row id, when one exists yet. */
   projectPeriodId: string | null;
+  cutoff: CutoffMeta;
 };
 
 export type GeneralSection = {
@@ -72,6 +80,7 @@ export type GeneralSection = {
   submittedAt: string | null;
   rejectionReason: string | null;
   legacyPeriodId: string | null;
+  cutoff: CutoffMeta;
 };
 
 export type MyTimesheetCatalogs = {
@@ -128,9 +137,24 @@ export async function getMyTimesheetData(
   // Timezone drives "today"; never the server clock.
   const org = await prisma.organizations.findUniqueOrThrow({
     where: { id: organizationId },
-    select: { timezone: true },
+    select: {
+      timezone: true,
+      submission_cutoff_enabled: true,
+      submission_cutoff_offset_days: true,
+      submission_cutoff_time: true,
+    },
   });
   const today = todayInTimeZone(org.timezone);
+  const cutoffPolicy = {
+    enabled: org.submission_cutoff_enabled,
+    offsetDays: org.submission_cutoff_offset_days,
+    timeLocal: org.submission_cutoff_time,
+  };
+  const buildCutoff = (endDate: DateStr, status: TimesheetStatus): CutoffMeta => {
+    const cutoff = getSubmissionCutoff(endDate, cutoffPolicy, org.timezone);
+    const state = getCutoffState(new Date(), cutoff, status);
+    return { state, label: cutoff && state !== "disabled" && state !== "not_actionable" ? formatCutoffForOrg(cutoff, org.timezone) : null };
+  };
 
   const [assignments, platforms, activityTypes, templates] = await Promise.all([
     prisma.project_assignments.findMany({
@@ -229,6 +253,7 @@ export async function getMyTimesheetData(
       submittedAt: row?.submitted_at ? row.submitted_at.toISOString() : null,
       rejectionReason: row?.rejection_reason ?? null,
       projectPeriodId: row?.id ?? null,
+      cutoff: buildCutoff(shown.end, status),
     });
   }
 
@@ -265,6 +290,7 @@ export async function getMyTimesheetData(
     submittedAt: legacyPeriod?.submitted_at ? legacyPeriod.submitted_at.toISOString() : null,
     rejectionReason: legacyPeriod?.rejection_reason ?? null,
     legacyPeriodId: legacyPeriod?.id ?? null,
+    cutoff: buildCutoff(generalWeek.end, generalStatus),
   };
 
   return {
