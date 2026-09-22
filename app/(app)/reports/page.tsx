@@ -123,6 +123,20 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
               Payroll readiness →
             </Button>
           </Link>
+          {user.role === "admin" ? (
+            <>
+              <Link href="/reports/equipment">
+                <Button type="button" variant="outline" size="sm">
+                  Equipment inventory →
+                </Button>
+              </Link>
+              <Link href="/reports/contracts">
+                <Button type="button" variant="outline" size="sm">
+                  Contracts →
+                </Button>
+              </Link>
+            </>
+          ) : null}
           <a href={`/api/reports/export?${exportQuery}&format=csv`}>
             <Button type="button" variant="outline" size="sm">
               Export CSV

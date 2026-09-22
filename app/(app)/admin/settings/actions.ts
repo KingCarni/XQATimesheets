@@ -6,6 +6,7 @@ import { requireWritableOrganizationAdmin } from "@/lib/tenant/context";
 import { updatePayPeriodSettings } from "@/lib/organizations/pay-period-settings";
 import { prisma } from "@/lib/prisma";
 import { isCutoffPolicyReady } from "@/lib/pay-periods/cutoff";
+import { parseExpiryWarningDaysInput } from "@/lib/contracts/expiry";
 
 export type SettingsState = { error: string | null; ok: boolean };
 
@@ -101,6 +102,54 @@ export async function saveSubmissionCutoffSettings(
     });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not save cutoff settings.", ok: false };
+  }
+
+  revalidatePath("/admin/settings");
+  return { error: null, ok: true };
+}
+
+/**
+ * MHV-13 contract expiry warning window. Admin-only. Empty input disables
+ * warnings for the tenant; otherwise 0..365 whole days. Change is audited so
+ * operational history is preserved.
+ */
+export async function saveContractExpiryWarningSettings(
+  _prev: SettingsState,
+  formData: FormData,
+): Promise<SettingsState> {
+  const { organization, user } = await requireWritableOrganizationAdmin();
+  let warningDays: number | null;
+  try {
+    warningDays = parseExpiryWarningDaysInput(String(formData.get("warningDays") ?? ""));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Invalid warning window.", ok: false };
+  }
+
+  const before = await prisma.organizations.findUnique({
+    where: { id: organization.id },
+    select: { contract_expiry_warning_days: true },
+  });
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.organizations.update({
+        where: { id: organization.id },
+        data: { contract_expiry_warning_days: warningDays },
+      });
+      await tx.audit_history.create({
+        data: {
+          entity_type: "organization",
+          entity_id: organization.id,
+          action: "update_contract_expiry_warning",
+          actor_user_id: user.id,
+          before_state: before ?? undefined,
+          after_state: { contract_expiry_warning_days: warningDays },
+          organization_id: organization.id,
+        },
+      });
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not save.", ok: false };
   }
 
   revalidatePath("/admin/settings");

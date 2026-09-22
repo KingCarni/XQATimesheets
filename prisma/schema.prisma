@@ -628,6 +628,8 @@ model organizations {
   submission_cutoff_enabled     Boolean @default(false)
   submission_cutoff_offset_days Int?    // 0..14 days after operational period end
   submission_cutoff_time        String? // "HH:MM" 24h local time
+  // MHV-13 contract expiry warning window (0..365 days; NULL = disabled).
+  contract_expiry_warning_days  Int?
   is_demo                 Boolean         @default(false)
   onboarding_step         String          @default("company")
   onboarding_completed_at DateTime?       @db.Timestamptz(6)

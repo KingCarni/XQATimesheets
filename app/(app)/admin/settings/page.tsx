@@ -5,6 +5,7 @@ import { getOrgPayPeriodContext, orgToday } from "@/lib/pay-periods/queries";
 import { PayPeriodSettingsForm } from "@/components/admin/pay-period-settings-form";
 import { prisma } from "@/lib/prisma";
 import { SubmissionCutoffForm } from "@/components/admin/submission-cutoff-form";
+import { ContractExpiryWarningForm } from "@/components/admin/contract-expiry-form";
 
 export default async function PayPeriodSettingsPage() {
   const { organization } = await requireOrganizationAdmin();
@@ -19,6 +20,7 @@ export default async function PayPeriodSettingsPage() {
       submission_cutoff_enabled: true,
       submission_cutoff_offset_days: true,
       submission_cutoff_time: true,
+      contract_expiry_warning_days: true,
     },
   });
 
@@ -61,6 +63,20 @@ export default async function PayPeriodSettingsPage() {
             timeLocal={org?.submission_cutoff_time ?? null}
             timezone={org?.timezone ?? "America/Vancouver"}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Contract expiry warnings</CardTitle>
+          <CardDescription>
+            Send admin notifications when an employee contract with an end date is
+            within this many days of expiring. Leave blank to disable warnings for
+            the whole organization.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ContractExpiryWarningForm warningDays={org?.contract_expiry_warning_days ?? null} />
         </CardContent>
       </Card>
     </div>

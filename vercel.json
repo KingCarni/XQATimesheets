@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/cutoff-notifications",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/contract-expiry",
+      "schedule": "0 9 * * *"
     }
   ]
 }

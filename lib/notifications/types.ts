@@ -11,6 +11,8 @@ export type NotificationType =
   | "cutoff_overdue"
   | "payroll_action"
   | "timesheet_reminder"
+  | "contract_expiring"
+  | "contract_expired"
   | "system";
 
 export type CreateNotificationInput = {
@@ -50,4 +52,19 @@ export type NotificationRow = {
  */
 export function cutoffDedupeKey(kind: "cutoff_due_soon" | "cutoff_overdue", periodRef: string): string {
   return `${kind}:${periodRef}`;
+}
+
+/**
+ * MHV-13 dedupe key for contract-expiry notifications. One key per (contract,
+ * event kind) — repeated sweep runs never create duplicates. Because there is
+ * exactly one `expired` moment per contract, the `contract_expired` key does
+ * not need a date suffix; `contract_expiring` re-fires only if the contract
+ * end date is changed to a new value AND the caller varies the key (V1 keeps
+ * it strictly one warning per contract).
+ */
+export function contractDedupeKey(
+  kind: "contract_expiring" | "contract_expired",
+  contractId: string,
+): string {
+  return `${kind}:${contractId}`;
 }
