@@ -1,0 +1,74 @@
+# MHV-14 backup workflow — TEMPLATE
+#
+# This file is intentionally named `.yml.template` and NOT `.yml`, so GitHub
+# will not schedule it automatically. Two prerequisites must be satisfied
+# BEFORE renaming it to activate:
+#
+#   1. A durable off-machine backup destination exists (S3 / R2 / GCS bucket
+#      with server-side encryption enabled).
+#   2. Repository or environment secrets are set:
+#        DATABASE_URL_UNPOOLED  (Neon direct connection string; do NOT commit)
+#        BACKUP_S3_BUCKET       (or the equivalent for your chosen provider)
+#        AWS_ACCESS_KEY_ID      (or the equivalent)
+#        AWS_SECRET_ACCESS_KEY  (or the equivalent)
+#        AWS_REGION             (or the equivalent)
+#
+# Never put DB credentials or bucket credentials in this file. Only reference
+# them via `${{ secrets.NAME }}`.
+#
+# On failure this workflow returns non-zero, which surfaces as a GitHub
+# Actions failure notification. Backup failures are infrastructure alerts,
+# NOT MHV-3 tenant notifications.
+
+name: DB backup (daily)
+
+on:
+  schedule:
+    # 09:00 UTC daily. Adjust if you prefer a different quiet hour.
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install postgresql-client (matches Neon's server major)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Create backup
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+        # Production endpoint gate: the source is by definition production
+        # for the scheduled workflow, so pass the explicit flag + phrase.
+        # For a QA-only scheduled run, remove these flags — the classifier
+        # will permit the QA endpoint automatically.
+        run: >
+          node scripts/backup-db.mjs
+          --out backups
+          --allow-production
+          --confirm "backup production"
+
+      # Upload to durable off-machine storage. Do NOT retain the backup as a
+      # public GitHub artifact — it contains sensitive tenant data.
+      - name: Upload to durable storage (S3 example)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+        run: |
+          test -n "$BUCKET" || { echo "No bucket configured"; exit 1; }
+          # SSE-KMS or SSE-S3 must be enabled at the bucket level.
+          aws s3 cp --recursive backups/ "s3://$BUCKET/db/$(date -u +%Y/%m/%d)/"
